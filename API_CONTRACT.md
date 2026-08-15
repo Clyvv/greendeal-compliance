@@ -46,6 +46,18 @@ Status column: 🟡 mock only (current) · 🟢 contract finalized · 🔵 built
 | `getProductEvidence(productVersionId)` | `GET /api/v1/product-versions/{versionId}/evidence` | 🟡 |
 | `addEvidence(productVersionId, input)` | `POST /api/v1/product-versions/{versionId}/evidence` | 🟡 |
 
+Note: the Create Product wizard (Stage 1b) submits identification,
+physical/circularity/chemical-safety/specialized-domain data, and
+evidence all in one user action, so the mock's `createSupplierProduct`
+bundles what this table shows as three separate calls
+(createSupplierProduct + createProductVersion + addEvidence) into one —
+it creates the product, its v1.0 ProductVersion, and any Evidence
+records together, always as DRAFT. `publishProduct` is a separate, pure
+status transition (DRAFT → PUBLISHED) and does not create a new
+version. A real backend would likely keep these as distinct calls (and
+`updateProductDraft`/`createProductVersion`/`addEvidence` remain
+unimplemented in the mock for now — see Stage 2+).
+
 ## mockPackagingService
 
 | Function | Method + Path | Status |

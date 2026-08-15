@@ -15,6 +15,11 @@ import {
 import { StatusPill } from "@/components/ui/status-pill";
 import { EmptyState } from "@/components/ui/empty-state";
 
+// Products created via the Create Product wizard (Stage 1b) must be
+// reflected here immediately — force per-request rendering rather than
+// the build-time static prerender this route would otherwise get.
+export const dynamic = "force-dynamic";
+
 export default async function SupplierDashboardPage() {
   const products = await getSupplierProducts(CURRENT_SUPPLIER_ORG_ID);
 

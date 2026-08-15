@@ -5,6 +5,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useState,
 } from "react";
 import { createPortal } from "react-dom";
@@ -29,6 +30,17 @@ const AUTO_DISMISS_MS = 5000;
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  // The toast portal only exists on the client (it targets
+  // document.body), so both the server render and React's initial
+  // client render must produce nothing here — otherwise hydration sees
+  // a mismatch. Flipping this in an effect defers the portal to a
+  // client-only pass, after hydration has already reconciled.
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional mount-flag to defer the portal past hydration (see comment above)
+    setMounted(true);
+  }, []);
 
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((item) => item.id !== id));
@@ -49,7 +61,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={{ toast }}>
       {children}
-      {typeof document !== "undefined" &&
+      {mounted &&
         createPortal(
           <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2">
             {toasts.map((item) => (
