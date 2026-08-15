@@ -3,3 +3,6 @@
 // /lib/services instead.
 
 export * from "./organizations";
+export * from "./products";
+export * from "./product-versions";
+export * from "./evidence";
