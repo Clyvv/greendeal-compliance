@@ -24,6 +24,13 @@ Status column: 🟡 mock only (current) · 🟢 contract finalized · 🔵 built
 
 ---
 
+## mockOrganizationService
+
+| Function | Method + Path | Status |
+|---|---|---|
+| `getOrganizations()` | `GET /api/v1/organizations` | 🟡 |
+| `getOrganization(orgId)` | `GET /api/v1/organizations/{orgId}` | 🟡 |
+
 ## mockProductService
 
 | Function | Method + Path | Status |
