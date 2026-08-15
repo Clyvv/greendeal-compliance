@@ -1,4 +1,5 @@
 import type { FieldStatus } from "@/lib/types";
+import type { StatusPillStatus } from "@/components/ui/status-pill";
 
 /**
  * Human-readable labels for the FieldStatus enum (AGENTS.md §8,
@@ -19,3 +20,21 @@ export const FIELD_STATUS_OPTIONS: { value: FieldStatus; label: string }[] = [
 export const FIELD_STATUS_LABELS: Record<FieldStatus, string> = Object.fromEntries(
   FIELD_STATUS_OPTIONS.map(({ value, label }) => [value, label])
 ) as Record<FieldStatus, string>;
+
+/**
+ * Maps each FieldStatus onto the sanctioned status-icon set
+ * (AGENTS.md §4) for read-only display (e.g. Product Details).
+ * NOT_PROVIDED and NOT_APPLICABLE must always render as visibly
+ * distinct pills (⚠ vs ○) — never blank, never collapsed into one
+ * state (AGENTS.md §8). PROVIDED/PENDING_VERIFICATION are treated as
+ * "in flight, not yet independently verified" (⏳), distinct from
+ * VERIFIED, which is the fully-confirmed/approved state (✓).
+ */
+export const FIELD_STATUS_TO_PILL: Record<FieldStatus, StatusPillStatus> = {
+  NOT_PROVIDED: "missing",
+  NOT_APPLICABLE: "not-applicable",
+  PROVIDED: "pending",
+  PENDING_VERIFICATION: "pending",
+  VERIFIED: "complete",
+  EXPIRED: "expired",
+};

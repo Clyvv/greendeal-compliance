@@ -75,6 +75,9 @@ export default async function SupplierProductsPage() {
               <TableHead>Version</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Last Updated</TableHead>
+              <TableHead>
+                <span className="sr-only">Actions</span>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -127,6 +130,14 @@ export default async function SupplierProductsPage() {
                   />
                 </TableCell>
                 <TableCell>{formatDate(product.lastUpdated)}</TableCell>
+                <TableCell>
+                  <Link
+                    href={`/supplier/products/${product.id}`}
+                    className="font-medium text-emerald-700 hover:underline"
+                  >
+                    View
+                  </Link>
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
