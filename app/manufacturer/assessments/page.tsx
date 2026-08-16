@@ -1,6 +1,32 @@
-import { EmptyState } from "@/components/ui/empty-state";
+import { getPackagingItems } from "@/lib/services/mockPackagingService";
+import { getAssessmentHistory } from "@/lib/services/mockAssessmentService";
+import { CURRENT_MANUFACTURER_ORG_ID } from "@/lib/constants";
+import {
+  AssessmentHistoryTable,
+  type AssessmentHistoryRow,
+} from "@/components/assessments/assessment-history-table";
 
-export default function ManufacturerAssessmentsPage() {
+// New assessments must show up here immediately after being run, so
+// this route shouldn't be build-time cached.
+export const dynamic = "force-dynamic";
+
+export default async function ManufacturerAssessmentsPage() {
+  const packagingItems = await getPackagingItems(CURRENT_MANUFACTURER_ORG_ID);
+
+  const rows: AssessmentHistoryRow[] = (
+    await Promise.all(
+      packagingItems.map(async (item) => {
+        const history = await getAssessmentHistory(item.id);
+        return history.map((assessment) => ({
+          assessment,
+          packagingItemName: item.name,
+        }));
+      })
+    )
+  )
+    .flat()
+    .sort((a, b) => (a.assessment.createdAt < b.assessment.createdAt ? 1 : -1));
+
   return (
     <div className="space-y-6">
       <div>
@@ -9,9 +35,10 @@ export default function ManufacturerAssessmentsPage() {
           Run and review PPWR compliance assessments.
         </p>
       </div>
-      <EmptyState
-        title="No assessments yet"
-        description="Compliance assessments will appear here once run."
+      <AssessmentHistoryTable
+        rows={rows}
+        showPackagingItemColumn
+        emptyStateDescription="Compliance assessments will appear here once run."
       />
     </div>
   );

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/ui/status-pill";
+import { RunAssessmentButton } from "@/components/assessments/run-assessment-button";
 import {
   COMPONENT_READINESS_LABELS,
   COMPONENT_READINESS_TO_PILL,
@@ -88,9 +89,7 @@ export function PackagingReadinessPanel({
             <p className="text-sm font-medium text-emerald-700">
               ✓ Ready for assessment
             </p>
-            <Link href={`/manufacturer/packaging-items/${packagingItemId}/assessment`}>
-              <Button type="button">Run PPWR Assessment</Button>
-            </Link>
+            <RunAssessmentButton packagingItemId={packagingItemId} />
           </div>
         ) : (
           <div>

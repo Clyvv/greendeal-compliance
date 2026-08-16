@@ -10,3 +10,4 @@ export * from "./packaging-items";
 export * from "./packaging-components";
 export * from "./data-requests";
 export * from "./data-approvals";
+export * from "./assessments";
