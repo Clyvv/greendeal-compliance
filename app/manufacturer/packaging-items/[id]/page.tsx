@@ -5,14 +5,23 @@ import {
   getPackagingItem,
 } from "@/lib/services/mockPackagingService";
 import {
+  getProductEvidence,
   getProductVersion,
   getSupplierProduct,
 } from "@/lib/services/mockProductService";
 import { getOrganization } from "@/lib/services/mockOrganizationService";
-import { getDataRequests } from "@/lib/services/mockRequestService";
+import {
+  getAuthorizedData,
+  getDataRequests,
+} from "@/lib/services/mockRequestService";
 import { CURRENT_MANUFACTURER_ORG_ID } from "@/lib/constants";
 import { PackagingComponentCard } from "@/components/packaging/packaging-component-card";
+import {
+  PackagingReadinessPanel,
+  type ReadinessRow,
+} from "@/components/packaging/packaging-readiness-panel";
 import { EmptyState } from "@/components/ui/empty-state";
+import { computeComponentReadiness, summarizeReadiness } from "@/lib/readiness";
 
 // New packaging items must be reachable immediately after creation,
 // and this route has no generateStaticParams, so nothing here should
@@ -46,25 +55,55 @@ export default async function PackagingItemDetailsPage({
       const supplierProduct = await getSupplierProduct(
         component.supplierProductId
       );
-      const [supplierOrg, productVersion] = await Promise.all([
-        supplierProduct
-          ? getOrganization(supplierProduct.supplierId)
-          : Promise.resolve(undefined),
-        getProductVersion(component.productVersionId),
-      ]);
+      const [supplierOrg, productVersion, evidenceItems, authorizedData] =
+        await Promise.all([
+          supplierProduct
+            ? getOrganization(supplierProduct.supplierId)
+            : Promise.resolve(undefined),
+          getProductVersion(component.productVersionId),
+          getProductEvidence(component.productVersionId),
+          getAuthorizedData(component.id),
+        ]);
       const dataRequest = sentRequests.find(
         (request) =>
           request.packagingItemId === component.packagingItemId &&
           request.supplierProductId === component.supplierProductId
       );
+
+      // Stage 6 — real, computed readiness (never hardcoded) from this
+      // component's actual authorization state: what was requested,
+      // what the request's current status is, and what's actually
+      // been authorized (see lib/readiness.ts for the required-field
+      // definition and the AUTHORIZED/PENDING/DENIED/NOT_REQUESTED logic).
+      const readiness = computeComponentReadiness({
+        requestedAttributes: dataRequest?.requestedAttributes ?? [],
+        requestStatus: dataRequest?.status,
+        authorizedAttributes: authorizedData?.authorizedAttributes ?? [],
+        evidenceDocumentNames: evidenceItems.map((item) => item.documentName),
+      });
+
       return {
         component,
         supplierProduct,
         supplierOrg,
         productVersion,
         dataRequestId: dataRequest?.id,
+        readiness,
       };
     })
+  );
+
+  const readinessRows: ReadinessRow[] = resolvedComponents.map(
+    ({ component, supplierProduct, supplierOrg, dataRequestId, readiness }) => ({
+      component,
+      supplierProductName: supplierProduct?.name,
+      supplierName: supplierOrg?.name,
+      dataRequestId,
+      readiness,
+    })
+  );
+  const readinessSummary = summarizeReadiness(
+    readinessRows.map((row) => row.readiness)
   );
 
   return (
@@ -82,6 +121,14 @@ export default async function PackagingItemDetailsPage({
           SKU {item.sku} · {item.market} · {item.packagingType}
         </p>
       </div>
+
+      {resolvedComponents.length > 0 && (
+        <PackagingReadinessPanel
+          packagingItemId={item.id}
+          rows={readinessRows}
+          summary={readinessSummary}
+        />
+      )}
 
       <div>
         <h2 className="mb-3 text-sm font-semibold text-slate-900">
