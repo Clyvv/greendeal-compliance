@@ -70,6 +70,15 @@ unimplemented in the mock for now — see Stage 2+).
 | `replaceComponentProduct(componentId, newProductId)` | `PATCH /api/v1/packaging-components/{componentId}` | 🟡 |
 | `getPackagingReadiness(itemId)` | `GET /api/v1/packaging-items/{itemId}/readiness` | 🟡 |
 
+Note: `createPackagingItem` (Stage 3) creates an item with zero
+components — `addPackagingComponent` remains unimplemented until
+component selection exists (a later stage). Per AGENTS.md §7, nothing
+in this service (or the manufacturer UI built on it) ever returns or
+renders a referenced Supplier Product's actual compliance fields —
+only reference-level info (product name, supplier name, version
+label). `getAuthorizedData` (mockRequestService, below) is what
+exposes real field data, and only once a Data Request is approved.
+
 ## mockRequestService
 
 | Function | Method + Path | Status |

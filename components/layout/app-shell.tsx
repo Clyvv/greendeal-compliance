@@ -26,7 +26,19 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         )}
 
-        <main className="min-w-0 flex-1 px-4 py-6 sm:px-6 lg:px-8">
+        {/*
+          [contain:paint] fixes a real cross-browser quirk: a wide,
+          horizontally-scrollable table (see components/ui/table.tsx)
+          inside a properly-clipped overflow-x-auto container can still
+          leak its full unclipped layout width into
+          document.documentElement.scrollWidth, letting the whole page
+          scroll sideways into blank space even though every element up
+          to <body> correctly reports no overflow. CSS containment
+          stops that leak at its source. Portals (Dialog/Toast) target
+          document.body directly, not this element, so they're
+          unaffected.
+        */}
+        <main className="min-w-0 flex-1 px-4 py-6 [contain:paint] sm:px-6 lg:px-8">
           {children}
         </main>
       </div>

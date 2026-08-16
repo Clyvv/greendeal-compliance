@@ -6,6 +6,10 @@
  */
 export const CURRENT_SUPPLIER_ORG_ID = "org-pet-solutions";
 
+/** See CURRENT_SUPPLIER_ORG_ID above — same prototype stand-in, for
+ * manufacturer-side screens (Stage 3+). */
+export const CURRENT_MANUFACTURER_ORG_ID = "org-coca-cola";
+
 /**
  * Fixed "today" for the prototype so date-relative mock data (e.g.
  * evidence expiration windows) is deterministic across runs. Chosen to

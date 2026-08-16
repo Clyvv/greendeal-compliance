@@ -6,3 +6,5 @@ export * from "./organizations";
 export * from "./products";
 export * from "./product-versions";
 export * from "./evidence";
+export * from "./packaging-items";
+export * from "./packaging-components";
