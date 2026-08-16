@@ -67,6 +67,7 @@ unimplemented in the mock for now — see Stage 2+).
 | `createPackagingItem(manufacturerId, input)` | `POST /api/v1/manufacturers/{manufacturerId}/packaging-items` | 🟡 |
 | `getPackagingComponents(itemId)` | `GET /api/v1/packaging-items/{itemId}/components` | 🟡 |
 | `getPackagingComponent(componentId)` | `GET /api/v1/packaging-components/{componentId}` | 🟡 |
+| `getPackagingComponentsByProduct(itemId, supplierProductId)` | `GET /api/v1/packaging-items/{itemId}/components?supplierProductId=` | 🟡 |
 | `addPackagingComponent(itemId, input)` | `POST /api/v1/packaging-items/{itemId}/components` | 🟡 |
 | `replaceComponentProduct(componentId, newProductId)` | `PATCH /api/v1/packaging-components/{componentId}` | 🟡 |
 | `updateComponentAuthorizationStatus(componentId, status)` | `PATCH /api/v1/packaging-components/{componentId}` | 🟡 |
@@ -89,6 +90,13 @@ mockRequestService below) to flip the requested component to PENDING;
 a real backend would likely do this itself as a side effect of
 creating the DataRequest rather than requiring a second client call.
 
+`getPackagingComponentsByProduct` (Stage 5) exists so the
+approve/reject Server Actions can resolve a DataRequest back to the
+component(s) it concerns and flip `authorizationStatus` to
+AUTHORIZED/REJECTED — same pattern as `updateComponentAuthorizationStatus`
+above, just looked up by (itemId, supplierProductId) instead of a
+componentId the caller already has.
+
 ## mockRequestService
 
 | Function | Method + Path | Status |
@@ -99,6 +107,15 @@ creating the DataRequest rather than requiring a second client call.
 | `approveDataRequest(requestId, approvedAttributes)` | `POST /api/v1/data-requests/{requestId}/approve` | 🟡 |
 | `rejectDataRequest(requestId, reason?)` | `POST /api/v1/data-requests/{requestId}/reject` | 🟡 |
 | `getAuthorizedData(packagingComponentId)` | `GET /api/v1/packaging-components/{componentId}/authorized-data` | 🟡 |
+
+`getDataRequests`'s `role` param is `'MANUFACTURER' | 'SUPPLIER'`
+(mirrors `Organization['type']`) — the Supplier Data Requests inbox
+(Stage 5) calls it with `role: 'SUPPLIER'`, and the Manufacturer Data
+Requests list (Stage 5 corrective addition) calls it with
+`role: 'MANUFACTURER'`. Both filter correctly today (`MANUFACTURER` →
+`requestingOrgId === orgId`, `SUPPLIER` → `supplierOrgId === orgId`);
+this table previously only had a supplier-side consumer to verify
+against.
 
 ## mockAssessmentService
 

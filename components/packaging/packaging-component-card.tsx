@@ -33,18 +33,31 @@ function DetailField({ label, value }: { label: string; value: ReactNode }) {
 export function PackagingComponentCard({
   component,
   packagingItemId,
+  dataRequestId,
   supplierProductName,
   supplierName,
   versionLabel,
 }: {
   component: PackagingComponent;
   packagingItemId: string;
+  /** The Data Request this component's authorizationStatus came from,
+   * if any (Stage 5 corrective addition) — lets the status badge link
+   * through to its detail view instead of being a dead end. Undefined
+   * for NOT_REQUESTED components, since there's nothing to view yet. */
+  dataRequestId?: string;
   supplierProductName?: string;
   supplierName?: string;
   versionLabel?: string;
 }) {
   const isAuthorized = component.authorizationStatus === "AUTHORIZED";
   const canRequestData = component.authorizationStatus === "NOT_REQUESTED";
+
+  const authorizationStatusPill = (
+    <StatusPill
+      status={AUTHORIZATION_STATUS_TO_PILL[component.authorizationStatus]}
+      label={AUTHORIZATION_STATUS_LABELS[component.authorizationStatus]}
+    />
+  );
 
   return (
     <Card>
@@ -61,10 +74,17 @@ export function PackagingComponentCard({
               {supplierName ?? "Unknown supplier"}
             </p>
           </div>
-          <StatusPill
-            status={AUTHORIZATION_STATUS_TO_PILL[component.authorizationStatus]}
-            label={AUTHORIZATION_STATUS_LABELS[component.authorizationStatus]}
-          />
+          {dataRequestId ? (
+            <Link
+              href={`/manufacturer/data-requests/${dataRequestId}`}
+              className="rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
+              title="View the underlying data request"
+            >
+              {authorizationStatusPill}
+            </Link>
+          ) : (
+            authorizationStatusPill
+          )}
         </div>
 
         <dl className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -103,7 +123,11 @@ export function PackagingComponentCard({
             variant="secondary"
             size="sm"
             disabled
-            title="Locked until the supplier authorizes access (Stage 5)"
+            title={
+              isAuthorized
+                ? "Full data view arrives in Stage 6"
+                : "Locked until the supplier authorizes access"
+            }
           >
             View Data
           </Button>
@@ -111,7 +135,11 @@ export function PackagingComponentCard({
             variant="secondary"
             size="sm"
             disabled
-            title="Locked until the supplier authorizes access (Stage 5)"
+            title={
+              isAuthorized
+                ? "Full data view arrives in Stage 6"
+                : "Locked until the supplier authorizes access"
+            }
           >
             View Evidence
           </Button>
@@ -123,20 +151,32 @@ export function PackagingComponentCard({
                 Request Data
               </Button>
             </Link>
+          ) : component.authorizationStatus === "PENDING" ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled
+              title="Awaiting supplier approval"
+            >
+              Request Pending
+            </Button>
+          ) : component.authorizationStatus === "REJECTED" ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled
+              title="The supplier rejected this data request"
+            >
+              Request Rejected
+            </Button>
           ) : (
             <Button
               variant="secondary"
               size="sm"
               disabled
-              title={
-                component.authorizationStatus === "PENDING"
-                  ? "Awaiting supplier approval"
-                  : "This component's data request has already been resolved"
-              }
+              title="This component's data is already authorized"
             >
-              {component.authorizationStatus === "PENDING"
-                ? "Request Pending"
-                : "Request Data"}
+              Authorized
             </Button>
           )}
           <Button

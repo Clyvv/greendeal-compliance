@@ -39,6 +39,25 @@ export async function getPackagingComponent(
   return packagingComponents.find((component) => component.id === componentId);
 }
 
+// Maps to: GET /api/v1/packaging-items/{itemId}/components?supplierProductId=
+// Added in Stage 5 — approving/rejecting a Data Request needs to find
+// the component(s) it was requested for, since DataRequest itself only
+// stores packagingItemId + supplierProductId, not a componentId
+// (DOMAIN.md §3). Returns an array since nothing in the domain model
+// strictly forbids the same supplier product being used by more than
+// one component on an item, even though today's sample data never
+// does that.
+export async function getPackagingComponentsByProduct(
+  packagingItemId: string,
+  supplierProductId: string
+): Promise<PackagingComponent[]> {
+  return packagingComponents.filter(
+    (component) =>
+      component.packagingItemId === packagingItemId &&
+      component.supplierProductId === supplierProductId
+  );
+}
+
 export interface CreatePackagingItemInput {
   name: string;
   sku: string;

@@ -1,9 +1,18 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createDataRequest } from "@/lib/services/mockRequestService";
-import { updateComponentAuthorizationStatus } from "@/lib/services/mockPackagingService";
+import {
+  approveDataRequest,
+  createDataRequest,
+  getDataRequest,
+  rejectDataRequest,
+} from "@/lib/services/mockRequestService";
+import {
+  getPackagingComponentsByProduct,
+  updateComponentAuthorizationStatus,
+} from "@/lib/services/mockPackagingService";
 import { CURRENT_MANUFACTURER_ORG_ID } from "@/lib/constants";
+import type { DataApproval } from "@/lib/types";
 
 export interface SubmitDataRequestInput {
   packagingItemId: string;
@@ -57,4 +66,83 @@ export async function submitDataRequestAction(
   revalidatePath("/manufacturer/data-requests");
 
   return { requestId: request.id };
+}
+
+// Flips every PackagingComponent this DataRequest concerns to the
+// given authorizationStatus. A DataRequest doesn't store a componentId
+// directly (DOMAIN.md §3), so it's resolved via (packagingItemId,
+// supplierProductId) instead — see
+// mockPackagingService.getPackagingComponentsByProduct.
+async function syncComponentAuthorization(
+  packagingItemId: string,
+  supplierProductId: string,
+  status: "AUTHORIZED" | "REJECTED"
+) {
+  const components = await getPackagingComponentsByProduct(
+    packagingItemId,
+    supplierProductId
+  );
+  await Promise.all(
+    components.map((component) =>
+      updateComponentAuthorizationStatus(component.id, status)
+    )
+  );
+}
+
+// Server Action, invoked from the client DataRequestApprovalFlow
+// component (Stage 5's supplier-side approval screen). Approves only
+// the still-checked subset of fields (AGENTS.md §7 — never
+// all-or-nothing), then syncs the related PackagingComponent(s) to
+// AUTHORIZED so the manufacturer side reflects it without a page
+// refresh workaround.
+export async function approveDataRequestAction(
+  requestId: string,
+  approvedAttributes: string[]
+): Promise<DataApproval> {
+  const request = await getDataRequest(requestId);
+  if (!request) {
+    throw new Error("Data request not found.");
+  }
+
+  const approval = await approveDataRequest(requestId, approvedAttributes);
+
+  await syncComponentAuthorization(
+    request.packagingItemId,
+    request.supplierProductId,
+    "AUTHORIZED"
+  );
+
+  revalidatePath("/supplier/data-requests");
+  revalidatePath(`/supplier/data-requests/${requestId}`);
+  revalidatePath(`/manufacturer/packaging-items/${request.packagingItemId}`);
+  revalidatePath("/manufacturer/data-requests");
+
+  return approval;
+}
+
+// Server Action for the Reject path — rejects the whole request (no
+// partial state per this stage's prompt) and syncs the related
+// component(s) to REJECTED so the manufacturer side shows a clear
+// rejected state rather than staying stuck on PENDING.
+export async function rejectDataRequestAction(
+  requestId: string,
+  reason?: string
+): Promise<void> {
+  const request = await getDataRequest(requestId);
+  if (!request) {
+    throw new Error("Data request not found.");
+  }
+
+  await rejectDataRequest(requestId, reason);
+
+  await syncComponentAuthorization(
+    request.packagingItemId,
+    request.supplierProductId,
+    "REJECTED"
+  );
+
+  revalidatePath("/supplier/data-requests");
+  revalidatePath(`/supplier/data-requests/${requestId}`);
+  revalidatePath(`/manufacturer/packaging-items/${request.packagingItemId}`);
+  revalidatePath("/manufacturer/data-requests");
 }

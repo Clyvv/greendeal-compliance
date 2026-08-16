@@ -9,6 +9,8 @@ import {
   getSupplierProduct,
 } from "@/lib/services/mockProductService";
 import { getOrganization } from "@/lib/services/mockOrganizationService";
+import { getDataRequests } from "@/lib/services/mockRequestService";
+import { CURRENT_MANUFACTURER_ORG_ID } from "@/lib/constants";
 import { PackagingComponentCard } from "@/components/packaging/packaging-component-card";
 import { EmptyState } from "@/components/ui/empty-state";
 
@@ -28,6 +30,17 @@ export default async function PackagingItemDetailsPage({
 
   const components = await getPackagingComponents(item.id);
 
+  // Needed so each component's authorization badge can link through to
+  // its underlying Data Request (Stage 5 corrective addition) rather
+  // than being a dead end — a DataRequest doesn't store a componentId
+  // directly (DOMAIN.md §3), so it's matched back via
+  // (packagingItemId, supplierProductId), same as
+  // mockPackagingService.getPackagingComponentsByProduct's inverse.
+  const sentRequests = await getDataRequests(
+    CURRENT_MANUFACTURER_ORG_ID,
+    "MANUFACTURER"
+  );
+
   const resolvedComponents = await Promise.all(
     components.map(async (component) => {
       const supplierProduct = await getSupplierProduct(
@@ -39,7 +52,18 @@ export default async function PackagingItemDetailsPage({
           : Promise.resolve(undefined),
         getProductVersion(component.productVersionId),
       ]);
-      return { component, supplierProduct, supplierOrg, productVersion };
+      const dataRequest = sentRequests.find(
+        (request) =>
+          request.packagingItemId === component.packagingItemId &&
+          request.supplierProductId === component.supplierProductId
+      );
+      return {
+        component,
+        supplierProduct,
+        supplierOrg,
+        productVersion,
+        dataRequestId: dataRequest?.id,
+      };
     })
   );
 
@@ -71,11 +95,18 @@ export default async function PackagingItemDetailsPage({
         ) : (
           <div className="space-y-4">
             {resolvedComponents.map(
-              ({ component, supplierProduct, supplierOrg, productVersion }) => (
+              ({
+                component,
+                supplierProduct,
+                supplierOrg,
+                productVersion,
+                dataRequestId,
+              }) => (
                 <PackagingComponentCard
                   key={component.id}
                   component={component}
                   packagingItemId={item.id}
+                  dataRequestId={dataRequestId}
                   supplierProductName={supplierProduct?.name}
                   supplierName={supplierOrg?.name}
                   versionLabel={productVersion?.versionLabel}

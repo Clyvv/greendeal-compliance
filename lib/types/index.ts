@@ -9,3 +9,4 @@ export * from "./product";
 export * from "./evidence";
 export * from "./packaging";
 export * from "./data-request";
+export * from "./data-approval";

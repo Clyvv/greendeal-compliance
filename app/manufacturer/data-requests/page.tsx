@@ -1,6 +1,51 @@
+import Link from "next/link";
+import { getDataRequests } from "@/lib/services/mockRequestService";
+import { getOrganization } from "@/lib/services/mockOrganizationService";
+import { getSupplierProduct } from "@/lib/services/mockProductService";
+import { getPackagingItem } from "@/lib/services/mockPackagingService";
+import { CURRENT_MANUFACTURER_ORG_ID } from "@/lib/constants";
+import { formatDate } from "@/lib/utils";
+import {
+  DATA_REQUEST_STATUS_LABELS,
+  DATA_REQUEST_STATUS_TO_PILL,
+} from "@/lib/requests/status";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { StatusPill } from "@/components/ui/status-pill";
 import { EmptyState } from "@/components/ui/empty-state";
 
-export default function ManufacturerDataRequestsPage() {
+// Requests created via Stage 4 (or resolved via Stage 5's approval
+// flow) must show up here immediately — force per-request rendering
+// rather than the build-time static prerender this route would
+// otherwise get.
+export const dynamic = "force-dynamic";
+
+export default async function ManufacturerDataRequestsPage() {
+  // Mirror image of the supplier inbox (Stage 5): requests Coca-Cola
+  // has SENT, not received. Same getDataRequests function, just the
+  // other role.
+  const requests = await getDataRequests(
+    CURRENT_MANUFACTURER_ORG_ID,
+    "MANUFACTURER"
+  );
+
+  const rows = await Promise.all(
+    requests.map(async (request) => {
+      const [supplierOrg, product, packagingItem] = await Promise.all([
+        getOrganization(request.supplierOrgId),
+        getSupplierProduct(request.supplierProductId),
+        getPackagingItem(request.packagingItemId),
+      ]);
+      return { request, supplierOrg, product, packagingItem };
+    })
+  );
+
   return (
     <div className="space-y-6">
       <div>
@@ -9,10 +54,70 @@ export default function ManufacturerDataRequestsPage() {
           Request and track supplier data access.
         </p>
       </div>
-      <EmptyState
-        title="No data requests yet"
-        description="Data requests sent to suppliers will appear here."
-      />
+
+      {rows.length === 0 ? (
+        <EmptyState
+          title="No data requests yet"
+          description="Data requests sent to suppliers will appear here."
+        />
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Supplier</TableHead>
+              <TableHead>Product</TableHead>
+              <TableHead>Packaging Item</TableHead>
+              <TableHead>Requested Attributes</TableHead>
+              <TableHead>Purpose</TableHead>
+              <TableHead>Request Date</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>
+                <span className="sr-only">Actions</span>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map(({ request, supplierOrg, product, packagingItem }) => {
+              const fieldCount = request.requestedAttributes.length;
+              return (
+                <TableRow key={request.id}>
+                  <TableCell className="font-medium text-slate-900">
+                    {supplierOrg?.name ?? "Unknown supplier"}
+                  </TableCell>
+                  <TableCell>{product?.name ?? "Unknown product"}</TableCell>
+                  <TableCell>
+                    {packagingItem?.name ?? "Unknown packaging item"}
+                  </TableCell>
+                  <TableCell>
+                    {fieldCount} field{fieldCount === 1 ? "" : "s"}
+                  </TableCell>
+                  <TableCell
+                    className="max-w-xs truncate"
+                    title={request.purpose}
+                  >
+                    {request.purpose}
+                  </TableCell>
+                  <TableCell>{formatDate(request.requestDate)}</TableCell>
+                  <TableCell>
+                    <StatusPill
+                      status={DATA_REQUEST_STATUS_TO_PILL[request.status]}
+                      label={DATA_REQUEST_STATUS_LABELS[request.status]}
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Link
+                      href={`/manufacturer/data-requests/${request.id}`}
+                      className="font-medium text-emerald-700 hover:underline"
+                    >
+                      View
+                    </Link>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      )}
     </div>
   );
 }
