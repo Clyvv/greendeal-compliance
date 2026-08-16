@@ -8,3 +8,4 @@ export * from "./product-versions";
 export * from "./evidence";
 export * from "./packaging-items";
 export * from "./packaging-components";
+export * from "./data-requests";

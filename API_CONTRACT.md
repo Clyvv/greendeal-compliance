@@ -66,8 +66,10 @@ unimplemented in the mock for now — see Stage 2+).
 | `getPackagingItem(itemId)` | `GET /api/v1/packaging-items/{itemId}` | 🟡 |
 | `createPackagingItem(manufacturerId, input)` | `POST /api/v1/manufacturers/{manufacturerId}/packaging-items` | 🟡 |
 | `getPackagingComponents(itemId)` | `GET /api/v1/packaging-items/{itemId}/components` | 🟡 |
+| `getPackagingComponent(componentId)` | `GET /api/v1/packaging-components/{componentId}` | 🟡 |
 | `addPackagingComponent(itemId, input)` | `POST /api/v1/packaging-items/{itemId}/components` | 🟡 |
 | `replaceComponentProduct(componentId, newProductId)` | `PATCH /api/v1/packaging-components/{componentId}` | 🟡 |
+| `updateComponentAuthorizationStatus(componentId, status)` | `PATCH /api/v1/packaging-components/{componentId}` | 🟡 |
 | `getPackagingReadiness(itemId)` | `GET /api/v1/packaging-items/{itemId}/readiness` | 🟡 |
 
 Note: `createPackagingItem` (Stage 3) creates an item with zero
@@ -78,6 +80,14 @@ renders a referenced Supplier Product's actual compliance fields —
 only reference-level info (product name, supplier name, version
 label). `getAuthorizedData` (mockRequestService, below) is what
 exposes real field data, and only once a Data Request is approved.
+
+`updateComponentAuthorizationStatus` (Stage 4) shares the same PATCH
+endpoint as the still-unimplemented `replaceComponentProduct` — both
+are partial updates to a PackagingComponent, just different fields of
+the body. It's called right after `createDataRequest` succeeds (see
+mockRequestService below) to flip the requested component to PENDING;
+a real backend would likely do this itself as a side effect of
+creating the DataRequest rather than requiring a second client call.
 
 ## mockRequestService
 

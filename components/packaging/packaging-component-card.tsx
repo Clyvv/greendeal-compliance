@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -31,16 +32,19 @@ function DetailField({ label, value }: { label: string; value: ReactNode }) {
  */
 export function PackagingComponentCard({
   component,
+  packagingItemId,
   supplierProductName,
   supplierName,
   versionLabel,
 }: {
   component: PackagingComponent;
+  packagingItemId: string;
   supplierProductName?: string;
   supplierName?: string;
   versionLabel?: string;
 }) {
   const isAuthorized = component.authorizationStatus === "AUTHORIZED";
+  const canRequestData = component.authorizationStatus === "NOT_REQUESTED";
 
   return (
     <Card>
@@ -111,17 +115,30 @@ export function PackagingComponentCard({
           >
             View Evidence
           </Button>
-          <div className="flex items-center gap-1.5">
+          {canRequestData ? (
+            <Link
+              href={`/manufacturer/packaging-items/${packagingItemId}/request/${component.id}`}
+            >
+              <Button variant="secondary" size="sm">
+                Request Data
+              </Button>
+            </Link>
+          ) : (
             <Button
               variant="secondary"
               size="sm"
               disabled
-              title="Selective data requests arrive in Stage 4"
+              title={
+                component.authorizationStatus === "PENDING"
+                  ? "Awaiting supplier approval"
+                  : "This component's data request has already been resolved"
+              }
             >
-              Request Data
+              {component.authorizationStatus === "PENDING"
+                ? "Request Pending"
+                : "Request Data"}
             </Button>
-            <Badge tone="info">Coming in Stage 4</Badge>
-          </div>
+          )}
           <Button
             variant="secondary"
             size="sm"

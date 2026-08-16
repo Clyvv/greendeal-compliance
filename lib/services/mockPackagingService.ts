@@ -28,6 +28,17 @@ export async function getPackagingComponents(
   );
 }
 
+// Maps to: GET /api/v1/packaging-components/{componentId}
+// Added in Stage 4 — the Request Data flow route is keyed off a
+// componentId directly (rather than filtering an item's component
+// list), so a single-record lookup is needed alongside the existing
+// per-item list above.
+export async function getPackagingComponent(
+  componentId: string
+): Promise<PackagingComponent | undefined> {
+  return packagingComponents.find((component) => component.id === componentId);
+}
+
 export interface CreatePackagingItemInput {
   name: string;
   sku: string;
@@ -74,6 +85,28 @@ export async function createPackagingItem(
   };
   packagingItems.push(item);
   return item;
+}
+
+// Maps to: PATCH /api/v1/packaging-components/{componentId}
+// Added in Stage 4 — called right after a Data Request is created for
+// this component (see lib/requests/actions.ts) so the component's
+// authorizationStatus reflects PENDING immediately, without a page
+// refresh workaround. A real backend would likely flip this
+// server-side as a side effect of creating the DataRequest; the mock
+// keeps it as an explicit second call so mockRequestService stays
+// focused on DataRequest records only.
+export async function updateComponentAuthorizationStatus(
+  componentId: string,
+  status: PackagingComponent["authorizationStatus"]
+): Promise<PackagingComponent> {
+  const component = packagingComponents.find(
+    (item) => item.id === componentId
+  );
+  if (!component) {
+    throw new Error(`Unknown packaging component: ${componentId}`);
+  }
+  component.authorizationStatus = status;
+  return component;
 }
 
 // Planned for a later stage (see API_CONTRACT.md → mockPackagingService):

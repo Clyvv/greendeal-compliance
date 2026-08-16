@@ -75,6 +75,7 @@ export default async function PackagingItemDetailsPage({
                 <PackagingComponentCard
                   key={component.id}
                   component={component}
+                  packagingItemId={item.id}
                   supplierProductName={supplierProduct?.name}
                   supplierName={supplierOrg?.name}
                   versionLabel={productVersion?.versionLabel}
