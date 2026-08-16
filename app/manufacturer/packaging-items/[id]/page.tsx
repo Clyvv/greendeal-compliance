@@ -14,12 +14,14 @@ import {
   getAuthorizedData,
   getDataRequests,
 } from "@/lib/services/mockRequestService";
+import { getAssessmentHistory } from "@/lib/services/mockAssessmentService";
 import { CURRENT_MANUFACTURER_ORG_ID } from "@/lib/constants";
 import { PackagingComponentCard } from "@/components/packaging/packaging-component-card";
 import {
   PackagingReadinessPanel,
   type ReadinessRow,
 } from "@/components/packaging/packaging-readiness-panel";
+import { AssessmentHistoryTable } from "@/components/assessments/assessment-history-table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { computeComponentReadiness, summarizeReadiness } from "@/lib/readiness";
 
@@ -106,6 +108,11 @@ export default async function PackagingItemDetailsPage({
     readinessRows.map((row) => row.readiness)
   );
 
+  // Stage 7 — every assessment ever run for this item, most recent
+  // first. Supports 0..n; running the assessment again always adds a
+  // new row rather than overwriting the last one.
+  const assessmentHistory = await getAssessmentHistory(item.id);
+
   return (
     <div className="space-y-6">
       <Link
@@ -162,6 +169,16 @@ export default async function PackagingItemDetailsPage({
             )}
           </div>
         )}
+      </div>
+
+      <div>
+        <h2 className="mb-3 text-sm font-semibold text-slate-900">
+          Assessment History ({assessmentHistory.length})
+        </h2>
+        <AssessmentHistoryTable
+          rows={assessmentHistory.map((assessment) => ({ assessment }))}
+          emptyStateDescription="Assessments run for this packaging item will appear here."
+        />
       </div>
     </div>
   );

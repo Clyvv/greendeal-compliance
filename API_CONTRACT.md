@@ -136,6 +136,19 @@ assessment id in `PROCESSING` status, with the client polling
 `AssessmentStatus.PROCESSING` state in the UI now specifically so this
 swap doesn't require new UI states later.
 
+`runAssessment`/`getAssessment`/`getAssessmentHistory` are implemented
+(Stage 7). Per the note above, `runAssessment` genuinely awaits a brief
+delay while the record sits at `PROCESSING` before flipping to
+`COMPLETE`/`REQUIRES_REVIEW` — not an instant flip — so a later swap to
+a real job queue only changes *how long*/*where* that wait happens, not
+the states a client needs to handle. Findings are computed by
+`lib/assessment-findings.ts` from real authorized data (via
+`getAuthorizedData`, `getProductEvidence`, `getProductVersion`, and
+Stage 6's `lib/readiness.ts`) — explicitly a simplified, illustrative
+heuristic (see that file's top comment), not a real PPWR rules engine.
+`getCalculation`/`getImpactAnalysis`/`recalculateAssessment` remain
+unimplemented — see Stage 8+.
+
 ## mockDocumentService
 
 | Function | Method + Path | Status |
