@@ -25,7 +25,11 @@ import {
 } from "@/components/packaging/packaging-readiness-panel";
 import { AssessmentHistoryTable } from "@/components/assessments/assessment-history-table";
 import { EmptyState } from "@/components/ui/empty-state";
-import { computeComponentReadiness, summarizeReadiness } from "@/lib/readiness";
+import {
+  computeComponentReadiness,
+  computeExternalComponentReadiness,
+  summarizeReadiness,
+} from "@/lib/readiness";
 
 // New packaging items must be reachable immediately after creation,
 // and this route has no generateStaticParams, so nothing here should
@@ -69,6 +73,11 @@ export default async function PackagingItemDetailsPage({
           kind: "EXTERNAL" as const,
           component,
           externalProduct,
+          // Stage 7.8 — included in the readiness rollup now (see
+          // below), always UNVERIFIED — there's no supplier org to
+          // request/authorize anything from (STAGE_7_REVIEW.md's
+          // original Stage 7.3 exclusion note, now superseded).
+          readiness: computeExternalComponentReadiness(),
         };
       }
 
@@ -119,23 +128,42 @@ export default async function PackagingItemDetailsPage({
   );
   const externalComponentCount = resolvedComponents.length - nativeComponents.length;
 
-  // External components are deliberately excluded from the PPWR
-  // readiness rollup below — there's no supplier org in Greendeal yet
-  // to request/authorize anything from, so there's nothing genuine to
-  // compute a per-field AUTHORIZED/PENDING/DENIED/NOT_REQUESTED state
-  // against (see PackagingComponentCard's dispatch to
-  // ExternalPackagingComponentCard for how these render instead).
-  const readinessRows: ReadinessRow[] = nativeComponents.map(
-    ({ component, supplierProduct, supplierOrg, dataRequestId, readiness }) => ({
-      component,
-      supplierProductName: supplierProduct?.name,
-      supplierName: supplierOrg?.name,
-      dataRequestId,
-      readiness,
-    })
+  // Stage 7.8 — external components are now INCLUDED in the readiness
+  // rollup (previously excluded entirely — STAGE_7_REVIEW.md's Stage
+  // 7.3 note, now superseded), each contributing its own UNVERIFIED
+  // readiness (computeExternalComponentReadiness) so the overall %
+  // honestly reflects them dragging it down rather than silently
+  // reading 100% off native components alone while an unverified one
+  // sits right there unaccounted for.
+  const readinessRows: ReadinessRow[] = resolvedComponents.map((resolved) =>
+    resolved.kind === "EXTERNAL"
+      ? {
+          kind: "EXTERNAL",
+          component: resolved.component,
+          externalProduct: resolved.externalProduct,
+          readiness: resolved.readiness,
+        }
+      : {
+          kind: "NATIVE",
+          component: resolved.component,
+          supplierProductName: resolved.supplierProduct?.name,
+          supplierName: resolved.supplierOrg?.name,
+          dataRequestId: resolved.dataRequestId,
+          readiness: resolved.readiness,
+        }
   );
-  const readinessSummary = summarizeReadiness(
+  // The overall %/summary shown on the panel includes every component
+  // (honest score — see above). Whether "Run PPWR Assessment" is
+  // offered stays gated on native components alone, exactly as before
+  // (Stage 6) — an unverified external component must not be able to
+  // silently block running an assessment on otherwise-fully-authorized
+  // native data; this stage is about visibility, not gating (this
+  // stage's prompt, point 3).
+  const overallReadinessSummary = summarizeReadiness(
     readinessRows.map((row) => row.readiness)
+  );
+  const nativeReadinessSummary = summarizeReadiness(
+    nativeComponents.map((resolved) => resolved.readiness)
   );
 
   // Stage 7 — every assessment ever run for this item, most recent
@@ -169,15 +197,17 @@ export default async function PackagingItemDetailsPage({
           <PackagingReadinessPanel
             packagingItemId={item.id}
             rows={readinessRows}
-            summary={readinessSummary}
+            summary={overallReadinessSummary}
+            canRunAssessment={nativeReadinessSummary.isFullyComplete}
           />
           {externalComponentCount > 0 && (
             <p className="text-xs text-slate-500">
-              {externalComponentCount} external supplier product
+              {externalComponentCount} component
               {externalComponentCount === 1 ? "" : "s"} below{" "}
-              {externalComponentCount === 1 ? "is" : "are"} not yet included
-              in this readiness check — there&rsquo;s no registered supplier
-              to request/authorize data from yet.
+              {externalComponentCount === 1 ? "uses" : "use"} unverified,
+              manufacturer-provided data (no registered Greendeal
+              supplier) — counted above as unverified, not as authorized
+              supplier data.
             </p>
           )}
         </div>

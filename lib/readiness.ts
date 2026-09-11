@@ -51,7 +51,18 @@ export interface ComponentReadiness {
   evidence: { state: ReadinessFieldState };
   requiredCount: number; // REQUIRED_PPWR_FIELDS.length + 1 (the evidence requirement)
   satisfiedCount: number;
-  overallStatus: "COMPLETE" | "PARTIAL" | "NOT_READY";
+  // Stage 7.8 — UNVERIFIED added for components backed by an
+  // ExternalSupplierProduct (Stage 7.3) rather than a real
+  // SupplierProduct. COMPLETE/PARTIAL/NOT_READY all describe a point
+  // along the native request→authorization pipeline (AGENTS.md §7) —
+  // that pipeline doesn't exist for an external component at all
+  // (there's no supplier org to request anything from), so forcing one
+  // of those three onto it would misrepresent manufacturer-provided
+  // data as either fully-authorized supplier data (COMPLETE) or merely
+  // "not yet requested" (NOT_READY, which implies a request could fix
+  // it). UNVERIFIED is its own honest state instead — see
+  // computeExternalComponentReadiness below.
+  overallStatus: "COMPLETE" | "PARTIAL" | "NOT_READY" | "UNVERIFIED";
 }
 
 /**
@@ -129,6 +140,39 @@ export function computeComponentReadiness(params: {
   };
 }
 
+/**
+ * Stage 7.8 — readiness for a component backed by an
+ * ExternalSupplierProduct (Stage 7.3) instead of a real SupplierProduct.
+ * Always the same shape: none of REQUIRED_PPWR_FIELDS (Circularity +
+ * Chemical Safety) are even modeled on ExternalSupplierProduct (see
+ * lib/types/external-supplier-product.ts — it only ever captures
+ * knownMaterialFamily/knownMaterialComposition/knownWeightGrams, none
+ * of which are PPWR-required fields), and there's no DataRequest/
+ * DataApproval pipeline possible against it at all (no supplier org to
+ * request from) — so every required field and the evidence requirement
+ * is genuinely NOT_REQUESTED (accurate, not a euphemism: it was never
+ * part of any request, because no request is possible), and
+ * satisfiedCount is always 0. This still contributes its real
+ * requiredCount to summarizeReadiness below, so a packaging item's
+ * overall % honestly reflects an unverified component dragging it
+ * down — it just never gets folded into "COMPLETE" the way an
+ * authorized native component does (see overallStatus's comment above).
+ */
+export function computeExternalComponentReadiness(): ComponentReadiness {
+  const requiredFields: RequiredFieldReadiness[] = REQUIRED_PPWR_FIELDS.map((field) => ({
+    field,
+    state: "NOT_REQUESTED",
+  }));
+
+  return {
+    requiredFields,
+    evidence: { state: "NOT_REQUESTED" },
+    requiredCount: requiredFields.length + 1,
+    satisfiedCount: 0,
+    overallStatus: "UNVERIFIED",
+  };
+}
+
 export const COMPONENT_READINESS_TO_PILL: Record<
   ComponentReadiness["overallStatus"],
   StatusPillStatus
@@ -136,6 +180,12 @@ export const COMPONENT_READINESS_TO_PILL: Record<
   COMPLETE: "complete",
   PARTIAL: "missing",
   NOT_READY: "not-authorized",
+  // Same icon PARTIAL uses (⚠) — AGENTS.md §4 forbids inventing new
+  // icons, and ⚠ is the closest sanctioned meaning for "some data
+  // present, but not verified/authoritative". Distinguished from
+  // PARTIAL by label text ("Unverified" vs "Partial"), same precedent
+  // lib/assessment-findings.ts already uses for WARNING vs MISSING.
+  UNVERIFIED: "missing",
 };
 
 export const COMPONENT_READINESS_LABELS: Record<
@@ -145,6 +195,7 @@ export const COMPONENT_READINESS_LABELS: Record<
   COMPLETE: "Complete",
   PARTIAL: "Partial",
   NOT_READY: "Not Requested",
+  UNVERIFIED: "Unverified",
 };
 
 export interface MissingGroup {

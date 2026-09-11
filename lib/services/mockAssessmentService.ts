@@ -7,7 +7,7 @@ import {
   getProductVersion,
 } from "@/lib/services/mockProductService";
 import { getAuthorizedData, getDataRequests } from "@/lib/services/mockRequestService";
-import { computeComponentReadiness } from "@/lib/readiness";
+import { computeComponentReadiness, computeExternalComponentReadiness } from "@/lib/readiness";
 import {
   computeAssessmentFindings,
   type ComponentAssessmentInput,
@@ -84,8 +84,27 @@ export async function runAssessment(
   const components = await getPackagingComponents(packagingItemId);
   const sentRequests = await getDataRequests(CURRENT_MANUFACTURER_ORG_ID, "MANUFACTURER");
 
+  // Stage 7.8 — a component references EITHER a real SupplierProduct OR
+  // an ExternalSupplierProduct (Stage 7.3); branch the same way
+  // app/(app)/manufacturer/packaging-items/[id]/page.tsx already does,
+  // so an external component's total absence of PPWR-required fields
+  // (see computeExternalComponentReadiness) is represented honestly
+  // (UNVERIFIED) rather than silently computed via the native
+  // request/authorization path it was never actually part of.
   const inputs: ComponentAssessmentInput[] = await Promise.all(
     components.map(async (component) => {
+      if (component.externalSupplierProductId) {
+        return {
+          componentId: component.id,
+          authorizedAttributes: [],
+          physical: EMPTY_PHYSICAL,
+          circularity: EMPTY_CIRCULARITY,
+          chemicalSafety: EMPTY_CHEMICAL_SAFETY,
+          evidenceItems: [],
+          readiness: computeExternalComponentReadiness(),
+        };
+      }
+
       const [productVersion, evidenceItems, authorizedData] = await Promise.all([
         getProductVersion(component.productVersionId),
         getProductEvidence(component.productVersionId),
