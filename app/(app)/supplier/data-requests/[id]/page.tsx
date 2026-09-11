@@ -9,7 +9,7 @@ import { getSupplierProduct } from "@/lib/services/mockProductService";
 import { getPackagingItem } from "@/lib/services/mockPackagingService";
 import { CURRENT_SUPPLIER_ORG_ID } from "@/lib/constants";
 import { groupRequestedAttributesBySection } from "@/lib/requests/fields";
-import { formatRequestingPartyName } from "@/lib/requests/requester";
+import { getRequestingPartyName } from "@/lib/requests/requester";
 import { getEffectiveOrigin } from "@/lib/requests/origin";
 import { DataRequestApprovalFlow } from "@/components/requests/data-request-approval-flow";
 
@@ -66,7 +66,13 @@ export default async function SupplierDataRequestDetailPage({
     <DataRequestApprovalFlow
       request={request}
       origin={getEffectiveOrigin(request)}
-      requestingOrgName={formatRequestingPartyName(request, requestingOrg?.name)}
+      // Stage 7.7 — the plain company/org name, no "(External
+      // Request)" suffix: the origin badge + Requester Details card
+      // on this page already establish that context, so the approval
+      // review/confirmation sentences read naturally either way
+      // ("...will be shared with Acme Bottling Co." not "...with Acme
+      // Bottling Co. (External Request)").
+      requestingOrgName={getRequestingPartyName(request, requestingOrg?.name)}
       supplierProductName={supplierProduct?.name ?? "Unknown product"}
       // Undefined (not a fallback string) when request.packagingItemId
       // itself is unset — a PUBLIC_REQUEST_LINK request genuinely has

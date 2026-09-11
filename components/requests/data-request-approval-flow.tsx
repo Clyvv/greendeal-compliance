@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import {
   Card,
@@ -84,6 +84,21 @@ export function DataRequestApprovalFlow({
 
   const totalRequestedCount = request.requestedAttributes.length;
   const totalCheckedCount = checkedAttributes.size;
+
+  // Original requirements doc §9 — the live "will share / will NOT
+  // share" breakdown, derived directly from checkedAttributes so it
+  // updates the instant a checkbox is toggled, never a separate static
+  // screen. Preserves request.requestedAttributes's own order rather
+  // than groupedRequested's section grouping — the spec's example is a
+  // flat list, not grouped.
+  const sharedAttributes = useMemo(
+    () => request.requestedAttributes.filter((attribute) => checkedAttributes.has(attribute)),
+    [request.requestedAttributes, checkedAttributes]
+  );
+  const notSharedAttributes = useMemo(
+    () => request.requestedAttributes.filter((attribute) => !checkedAttributes.has(attribute)),
+    [request.requestedAttributes, checkedAttributes]
+  );
 
   function toggleAttribute(attribute: string) {
     setCheckedAttributes((prev) => {
@@ -259,15 +274,6 @@ export function DataRequestApprovalFlow({
         </Card>
       )}
 
-      {status === "PENDING" && (
-        <div className="rounded-lg border border-sky-200 bg-sky-50 p-4">
-          <p className="text-sm text-sky-800">
-            This approval will allow {requestingOrgName} to access only the
-            selected information below.
-          </p>
-        </div>
-      )}
-
       {status === "APPROVED" && (
         <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
           <p className="text-sm font-semibold text-emerald-800">
@@ -377,7 +383,60 @@ export function DataRequestApprovalFlow({
             </div>
           ))}
         </CardContent>
-        {status === "PENDING" && (
+      </Card>
+
+      {/* Original requirements doc §9 — the live "will share / will
+          NOT share" breakdown, updating instantly as the checkboxes
+          above are toggled (same checkedAttributes state, not a
+          separate/parallel screen). Flat lists, not grouped by
+          section, matching the spec's exact example format. */}
+      {status === "PENDING" && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Approve Request</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <p className="text-sm font-medium text-slate-900">
+                The following information will be shared with{" "}
+                {requestingOrgName}:
+              </p>
+              {sharedAttributes.length === 0 ? (
+                <p className="mt-1.5 text-sm text-slate-500">
+                  Nothing selected yet.
+                </p>
+              ) : (
+                <ul className="mt-1.5 space-y-1">
+                  {sharedAttributes.map((attribute) => (
+                    <li
+                      key={attribute}
+                      className="text-sm text-emerald-700"
+                    >
+                      ✓ {attribute}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            <div>
+              <p className="text-sm font-medium text-slate-900">
+                The following requested information will NOT be shared:
+              </p>
+              {notSharedAttributes.length === 0 ? (
+                <p className="mt-1.5 text-sm text-slate-500">
+                  Everything requested is being shared.
+                </p>
+              ) : (
+                <ul className="mt-1.5 space-y-1">
+                  {notSharedAttributes.map((attribute) => (
+                    <li key={attribute} className="text-sm text-slate-500">
+                      — {attribute}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </CardContent>
           <CardFooter className="flex flex-wrap items-center justify-between gap-3">
             <Button
               variant="destructive"
@@ -393,7 +452,7 @@ export function DataRequestApprovalFlow({
                 onClick={handleApprove}
                 disabled={isPending || totalCheckedCount === 0}
               >
-                {isPending ? "Approving…" : `Approve (${totalCheckedCount})`}
+                {isPending ? "Approving…" : "Approve & Share"}
               </Button>
               {totalCheckedCount === 0 && (
                 <p className="mt-1 text-xs text-slate-500">
@@ -403,8 +462,8 @@ export function DataRequestApprovalFlow({
               )}
             </div>
           </CardFooter>
-        )}
-      </Card>
+        </Card>
+      )}
     </div>
   );
 }
