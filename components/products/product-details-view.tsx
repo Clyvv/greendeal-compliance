@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { Card, CardContent } from "@/components/ui/card";
 import { StatusPill } from "@/components/ui/status-pill";
 import { Tabs } from "@/components/ui/tabs";
+import { CopyLinkRow } from "@/components/public-request/copy-link-row";
 import { formatDate } from "@/lib/utils";
 import { IdentificationSection } from "./detail-sections/identification-section";
 import { PhysicalSection } from "./detail-sections/physical-section";
@@ -20,12 +22,18 @@ export function ProductDetailsView({
   versions,
   evidenceItems,
   supplierName,
+  supplierSlug,
 }: {
   product: SupplierProduct;
   currentVersion: ProductVersion | undefined;
   versions: ProductVersion[];
   evidenceItems: Evidence[];
   supplierName?: string;
+  /** Stage 7.4 — only used to build this product's Public Request Link
+   * below; undefined suppliers (shouldn't happen for a seeded supplier,
+   * but the type is optional — see lib/types/organization.ts) simply
+   * don't get the section rendered. */
+  supplierSlug?: string;
 }) {
   return (
     <div className="space-y-6">
@@ -66,6 +74,34 @@ export function ProductDetailsView({
           </HeaderStat>
         </div>
       </div>
+
+      {/* Stage 7.4 — public request link for this specific product
+          (original requirements doc: product-level link alongside the
+          supplier-level one on /supplier/request-links). Only shown
+          once the product is actually PUBLISHED — a link to a DRAFT
+          product would 404 on the public side (mockPublicRequestService
+          only ever resolves PUBLISHED products), and would be
+          confusing to hand out before then anyway. */}
+      {product.status === "PUBLISHED" && supplierSlug && (
+        <Card>
+          <CardContent className="space-y-2 py-4">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">
+                Public Request Link
+              </p>
+              <p className="text-xs text-slate-500">
+                Share this link so a customer can request compliance
+                information for this product directly, without needing
+                a Greendeal account.
+              </p>
+            </div>
+            <CopyLinkRow
+              path={`/request/${supplierSlug}/${product.id}`}
+              copyLabel="Copy Product Link"
+            />
+          </CardContent>
+        </Card>
+      )}
 
       <Tabs
         tabs={[

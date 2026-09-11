@@ -447,17 +447,14 @@ function ExternalSupplierFormStep({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-5">
-        {!isFull && (
-          <p className="rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-            This is a lighter-weight version of the External Supplier
-            Product form for data you already have on hand from another
-            source. It will never be presented as supplier-authoritative
-            (AGENTS.md §10a) — it&rsquo;s recorded as{" "}
-            <span className="font-medium">Imported Data</span>, distinct
-            from a manufacturer-entered stand-in for a supplier you intend
-            to invite.
-          </p>
-        )}
+        {/* LIGHT variant ("Use Existing Manufacturer-Provided Data") is
+            a lighter-weight version of the FULL "Add External Supplier
+            Product" form, for data the manufacturer already has on
+            hand from another source. It will never be presented as
+            supplier-authoritative (AGENTS.md §10a) — it's recorded
+            with sourceType "IMPORTED" (see handleSubmitExternal above),
+            distinct from FULL's "MANUFACTURER_PROVIDED", which stands
+            in for a supplier the manufacturer intends to invite. */}
 
         <RoleField role={role} onRoleChange={onRoleChange} />
 

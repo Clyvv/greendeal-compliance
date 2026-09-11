@@ -39,6 +39,7 @@ export default async function ProductDetailsPage({
       versions={versions}
       evidenceItems={evidenceItems}
       supplierName={supplierOrg?.name}
+      supplierSlug={supplierOrg?.slug}
     />
   );
 }

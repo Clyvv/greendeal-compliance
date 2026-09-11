@@ -16,6 +16,10 @@ export type NavItem = {
 export const SUPPLIER_NAV: NavItem[] = [
   { label: "Dashboard", href: "/supplier/dashboard" },
   { label: "Products", href: "/supplier/products" },
+  // Stage 7.4 — first of AGENTS.md §10a's suggested nav additions
+  // (Request Links, Settings, Suppliers); this is the one that
+  // actually has a page behind it now (Settings/Suppliers don't yet).
+  { label: "Request Links", href: "/supplier/request-links" },
   { label: "Data Requests", href: "/supplier/data-requests" },
   { label: "Evidence", href: "/supplier/evidence" },
 ];
