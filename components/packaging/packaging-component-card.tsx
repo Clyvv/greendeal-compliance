@@ -13,6 +13,7 @@ import {
 } from "@/lib/packaging-utils";
 import { buildSupplierMaintainedProvenance } from "@/lib/provenance";
 import { ExternalPackagingComponentCard } from "./external-packaging-component-card";
+import { RemoveComponentButton } from "./remove-component-button";
 import type { ExternalSupplierProduct, PackagingComponent } from "@/lib/types";
 
 export function DetailField({ label, value }: { label: string; value: ReactNode }) {
@@ -63,6 +64,7 @@ export function PackagingComponentCard({
     return (
       <ExternalPackagingComponentCard
         component={component}
+        packagingItemId={packagingItemId}
         externalSupplierProduct={externalSupplierProduct}
       />
     );
@@ -219,6 +221,11 @@ export function PackagingComponentCard({
           >
             Replace Product
           </Button>
+          <RemoveComponentButton
+            componentId={component.id}
+            packagingItemId={packagingItemId}
+            componentLabel={supplierProductName ?? component.role}
+          />
         </div>
       </CardContent>
     </Card>

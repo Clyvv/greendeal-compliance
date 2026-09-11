@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import {
   addPackagingComponent,
   createPackagingItem,
+  removeComponent,
 } from "@/lib/services/mockPackagingService";
 import {
   createExternalSupplierProduct,
@@ -155,6 +156,18 @@ export async function addExternalSupplierProductComponentAction(
 
   revalidatePackagingItem(input.packagingItemId);
   return component;
+}
+
+// Lets a manufacturer undo adding a component by mistake — invoked
+// directly from the client RemoveComponentButton (not a plain
+// <form action>), matching this file's other actions, so the card can
+// show its own inline confirm/pending state before calling this.
+export async function removeComponentAction(
+  componentId: string,
+  packagingItemId: string
+): Promise<void> {
+  await removeComponent(componentId);
+  revalidatePackagingItem(packagingItemId);
 }
 
 // Stage 7.3 — "Invite Supplier" affordance on an External Supplier

@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { StatusPill } from "@/components/ui/status-pill";
 import { ProvenanceBadge } from "@/components/provenance/provenance-badge";
 import { InviteSupplierButton } from "./invite-supplier-button";
+import { RemoveComponentButton } from "./remove-component-button";
 import { DetailField } from "./packaging-component-card";
 import { buildExternalSupplierProvenance } from "@/lib/provenance";
 import type { ExternalSupplierProduct, PackagingComponent } from "@/lib/types";
@@ -22,9 +23,11 @@ import type { ExternalSupplierProduct, PackagingComponent } from "@/lib/types";
  */
 export function ExternalPackagingComponentCard({
   component,
+  packagingItemId,
   externalSupplierProduct,
 }: {
   component: PackagingComponent;
+  packagingItemId: string;
   externalSupplierProduct?: ExternalSupplierProduct;
 }) {
   const provenance = externalSupplierProduct
@@ -100,6 +103,14 @@ export function ExternalPackagingComponentCard({
               defaultEmail={externalSupplierProduct?.supplierEmail}
             />
           </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2 border-t border-slate-200 pt-3">
+          <RemoveComponentButton
+            componentId={component.id}
+            packagingItemId={packagingItemId}
+            componentLabel={externalSupplierProduct?.productName ?? component.role}
+          />
         </div>
       </CardContent>
     </Card>

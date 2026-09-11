@@ -227,6 +227,33 @@ export async function addPackagingComponent(
   return component;
 }
 
+// Maps to: DELETE /api/v1/packaging-components/{componentId}
+// Lets a manufacturer undo adding a component (native or external) by
+// mistake — addPackagingComponent commits immediately, with no draft
+// state to back out of otherwise. Removes the component itself and
+// its id from the parent PackagingItem.componentIds, but deliberately
+// does NOT touch any DataRequest/DataApproval records raised against
+// it — those stay as historical entries (this app's audit-focused
+// principle, AGENTS.md §4) rather than being deleted; they just no
+// longer correspond to an active component. A real backend would
+// likely soft-delete for the same reason.
+export async function removeComponent(componentId: string): Promise<void> {
+  const componentIndex = packagingComponents.findIndex(
+    (item) => item.id === componentId
+  );
+  if (componentIndex === -1) {
+    throw new Error(`Unknown packaging component: ${componentId}`);
+  }
+  const [component] = packagingComponents.splice(componentIndex, 1);
+
+  const item = packagingItems.find(
+    (packagingItem) => packagingItem.id === component.packagingItemId
+  );
+  if (item) {
+    item.componentIds = item.componentIds.filter((id) => id !== componentId);
+  }
+}
+
 // Planned for a later stage (see API_CONTRACT.md → mockPackagingService):
 //   replaceComponentProduct(componentId, newProductId)
 //   getPackagingReadiness(itemId)
