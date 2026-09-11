@@ -130,14 +130,26 @@ export default async function PackagingItemDetailsPage({
   const externalComponents = resolvedComponents.filter(
     (resolved) => resolved.kind === "EXTERNAL"
   );
-  const externalComponentCount = externalComponents.length;
-  // Stage 7.10 — split out completed-response external components so
-  // the caption below doesn't call supplier-approved data "unverified,
-  // manufacturer-provided" once a real supplier has actually completed
-  // a response for it (see computeExternalComponentReadiness).
-  const unverifiedExternalComponentCount = externalComponents.filter(
-    (resolved) => resolved.externalProduct?.responseStatus !== "COMPLETED"
-  ).length;
+  // Stage 7.11 — three distinct buckets now, not two: a hasSupplier:false
+  // ("Use Existing Manufacturer-Provided Data") component is NEVER
+  // "awaiting" anything and is always its own bucket, regardless of how
+  // complete its data is — conflating it with either "awaiting a
+  // supplier" or "a supplier responded" would misrepresent a permanently
+  // self-reported record as having some relationship to a supplier at
+  // all.
+  const selfReportedComponents = externalComponents.filter(
+    (resolved) => resolved.externalProduct?.hasSupplier === false
+  );
+  const awaitingSupplierComponents = externalComponents.filter(
+    (resolved) =>
+      resolved.externalProduct?.hasSupplier !== false &&
+      resolved.externalProduct?.responseStatus !== "COMPLETED"
+  );
+  const supplierRespondedComponents = externalComponents.filter(
+    (resolved) =>
+      resolved.externalProduct?.hasSupplier !== false &&
+      resolved.externalProduct?.responseStatus === "COMPLETED"
+  );
 
   // Stage 7.8 — external components are now INCLUDED in the readiness
   // rollup (previously excluded entirely — STAGE_7_REVIEW.md's Stage
@@ -211,30 +223,34 @@ export default async function PackagingItemDetailsPage({
             summary={overallReadinessSummary}
             canRunAssessment={nativeReadinessSummary.isFullyComplete}
           />
-          {unverifiedExternalComponentCount > 0 && (
+          {awaitingSupplierComponents.length > 0 && (
             <p className="text-xs text-slate-500">
-              {unverifiedExternalComponentCount} component
-              {unverifiedExternalComponentCount === 1 ? "" : "s"} below{" "}
-              {unverifiedExternalComponentCount === 1 ? "uses" : "use"} unverified,
-              manufacturer-provided data (no registered Greendeal
-              supplier) — counted above as unverified, not as authorized
-              supplier data.
+              {awaitingSupplierComponents.length} component
+              {awaitingSupplierComponents.length === 1 ? "" : "s"} below{" "}
+              {awaitingSupplierComponents.length === 1 ? "uses" : "use"}{" "}
+              unverified, manufacturer-provided data (no registered
+              Greendeal supplier) — counted above as unverified, not as
+              authorized supplier data.
             </p>
           )}
-          {externalComponentCount > unverifiedExternalComponentCount && (
+          {supplierRespondedComponents.length > 0 && (
             <p className="text-xs text-slate-500">
-              {externalComponentCount - unverifiedExternalComponentCount}{" "}
-              component
-              {externalComponentCount - unverifiedExternalComponentCount === 1
-                ? ""
-                : "s"}{" "}
-              below{" "}
-              {externalComponentCount - unverifiedExternalComponentCount === 1
-                ? "uses"
-                : "use"}{" "}
+              {supplierRespondedComponents.length} component
+              {supplierRespondedComponents.length === 1 ? "" : "s"} below{" "}
+              {supplierRespondedComponents.length === 1 ? "uses" : "use"}{" "}
               data from a completed supplier response — more trusted than
               manufacturer-only entry, but still not a fully onboarded
               Greendeal Supplier Product.
+            </p>
+          )}
+          {selfReportedComponents.length > 0 && (
+            <p className="text-xs text-slate-500">
+              {selfReportedComponents.length} component
+              {selfReportedComponents.length === 1 ? "" : "s"} below{" "}
+              {selfReportedComponents.length === 1 ? "uses" : "use"}{" "}
+              manufacturer self-entered data with no supplier associated —
+              permanently unverified regardless of how complete the data
+              is.
             </p>
           )}
         </div>

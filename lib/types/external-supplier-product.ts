@@ -6,26 +6,34 @@ import type { FieldStatus } from "./field-status";
 // (AGENTS.md §10a scenarios 2 & 4). Owned by the Manufacturer, not the
 // Supplier — this is deliberately NOT a SupplierProduct (see
 // lib/types/product.ts): it has no ProductVersion, no Evidence, no
-// publish/draft lifecycle, because no supplier is maintaining it yet.
+// publish/draft lifecycle.
 //
-// sourceType/verificationStatus distinguish the two scenarios this
-// stage builds (see lib/services/mockExternalSupplierService.ts and
-// components/packaging/add-component-flow.tsx for exactly which path
-// sets which value):
-// - MANUFACTURER_PROVIDED — the manufacturer is standing this in as a
-//   real supplier they intend to onboard (full contact details
-//   captured so "Invite Supplier" is meaningful).
-// - IMPORTED — the manufacturer already has this compliance data on
-//   hand from some other existing source (email/PDF/ERP/spreadsheet)
-//   and is just entering it directly; no onboarding is implied.
-// Both start UNVERIFIED — nothing in this stage upgrades that; a real
-// Supplier "claiming" this record (Stage 7.4/7.5+) is what would.
+// Stage 7.11 — `hasSupplier` is the real discriminator between the two
+// Add Component paths this type serves (see
+// components/packaging/add-component-flow.tsx), replacing Stage 7.3's
+// conflated MANUFACTURER_PROVIDED-vs-IMPORTED "lighter-weight form"
+// framing:
+// - hasSupplier: true — "Add External Supplier Product". A real
+//   supplier exists (name + email); the manufacturer knows partial data
+//   and can ask the supplier to complete the rest via the Supplier
+//   Response Link (Stage 7.10). verificationStatus can eventually
+//   become SUPPLIER_APPROVED once that response is completed.
+// - hasSupplier: false — "Use Existing Manufacturer-Provided Data". No
+//   supplier entity exists at all — the manufacturer already has
+//   complete data from their own records (email thread, PDF,
+//   spreadsheet, ERP) and is the permanent, sole source. No
+//   supplierCompanyName/contact/email/country is ever collected for
+//   this path (there's nothing to collect), there is no one to invite
+//   or request more from, and verificationStatus stays UNVERIFIED
+//   forever — that is the permanent, correct state, not a bug or a
+//   step on the way to something else.
 export type ExternalSupplierProduct = {
   id: string;
   createdByManufacturerId: string;
-  supplierCompanyName: string;
+  hasSupplier: boolean;
+  supplierCompanyName?: string; // only ever set when hasSupplier is true
   supplierContactName?: string;
-  supplierEmail?: string;
+  supplierEmail?: string; // required when hasSupplier is true (needed for the Supplier Response Link)
   supplierCountry?: string;
   productName: string;
   supplierSku?: string;
@@ -33,30 +41,38 @@ export type ExternalSupplierProduct = {
   knownMaterialFamily?: string;
   knownMaterialComposition?: string;
   knownWeightGrams?: number;
-  sourceType: DataSourceType; // typically MANUFACTURER_PROVIDED or IMPORTED, or EXTERNAL_REQUEST_RESPONSE once a supplier response is completed (see below)
-  verificationStatus: VerificationStatus; // typically UNVERIFIED, or SUPPLIER_APPROVED once a supplier response is completed
-  claimedBySupplierId?: string; // set if a real Supplier later "claims" this (not built yet — full onboarding remains out of scope, see AGENTS.md §11)
+  // Always MANUFACTURER_PROVIDED at creation, for BOTH paths — it's the
+  // manufacturer who created this record either way. Only a hasSupplier:
+  // true record can later become EXTERNAL_REQUEST_RESPONSE (Stage 7.10,
+  // once the actual supplier completes a response); a hasSupplier:false
+  // record's sourceType never changes — there's no supplier response to
+  // receive.
+  sourceType: DataSourceType;
+  // UNVERIFIED at creation, for both paths. Only a hasSupplier:true
+  // record can later become SUPPLIER_APPROVED (Stage 7.10). A
+  // hasSupplier:false record's verificationStatus stays UNVERIFIED
+  // permanently — there is no supplier who could ever approve it, no
+  // matter how complete the data is (see readiness's UNVERIFIED_COMPLETE
+  // state for how completeness is still tracked honestly despite this).
+  verificationStatus: VerificationStatus;
+  claimedBySupplierId?: string; // only ever applies when hasSupplier was true (not built yet — AGENTS.md §11)
 
   // Stage 7.10 — Supplier Response Link (AGENTS.md's "Supplier Response
-  // Link" section). A manufacturer can ask the ACTUAL supplier behind
-  // this record to review/correct/complete it via a public, token-based
-  // link — distinct from the Public Request Link (§8a), which is a
-  // requester asking a supplier for data, not a manufacturer asking a
-  // specific already-identified supplier to fill in a specific record.
+  // Link" section). Only ever meaningful when hasSupplier is true —
+  // there is no one to send this to, and no response page will ever be
+  // reachable for it, when hasSupplier is false.
   responseToken?: string; // generated by requestInformationFromSupplier; identifies /supplier-response/{token}
   responseStatus: "NOT_SENT" | "SENT" | "COMPLETED";
 
-  // The fields below are populated by submitSupplierResponse once the
-  // supplier actually completes the response form. They deliberately
-  // mirror exactly the fields lib/readiness.ts's REQUIRED_PPWR_FIELDS
-  // gates a PPWR assessment on (Circularity + Chemical Safety) plus a
-  // couple of additional Physical fields the response form also
-  // collects — so a completed response can genuinely move readiness
-  // forward (see computeExternalComponentReadiness) instead of always
-  // reporting UNVERIFIED. This is still NOT full ProductVersion parity
-  // (no Specialized Domain/FCM fields, no versioning, no Identification
-  // section beyond what's already above) — a completed response stays
-  // an ExternalSupplierProduct, it never converts into a real
+  // Compliance data fields. Mirror lib/readiness.ts's REQUIRED_PPWR_FIELDS
+  // (Circularity + Chemical Safety) plus a few additional Physical
+  // fields, so this record can genuinely move readiness forward
+  // (computeExternalComponentReadiness) once real values are present —
+  // either via a completed Supplier Response (hasSupplier: true, Stage
+  // 7.10) or directly at creation via the full "Use Existing
+  // Manufacturer-Provided Data" form (hasSupplier: false, Stage 7.11).
+  // Still NOT full ProductVersion parity (no versioning) — this always
+  // stays an ExternalSupplierProduct, it never converts into a real
   // SupplierProduct/ProductVersion (AGENTS.md §11 remains out of scope).
   knownDimensions?: string;
   knownThicknessMm?: number;
@@ -70,7 +86,19 @@ export type ExternalSupplierProduct = {
   reachSvhcStatus?: FieldStatus;
   scipCode?: string;
   rohsStatus?: FieldStatus;
+  // Stage 7.11 — Specialized Domain Metrics (DOMAIN.md §2 Section 5),
+  // collected by the full "Use Existing Manufacturer-Provided Data"
+  // form. Not part of REQUIRED_PPWR_FIELDS (same scoping rationale as
+  // the native ProductVersion's own specializedDomain data — neither is
+  // read by lib/assessment-findings.ts today), so these never affect
+  // readiness/assessment computation, only informational display.
+  fcmStatus?: FieldStatus;
+  omlTestScore?: string;
+  sterilizationProfile?: string;
   // Mocked evidence per the Stage 1b convention (lib/wizard/types.ts's
   // EvidenceDraft) — filenames only, nothing actually uploaded/parsed.
-  responseEvidenceDocumentNames?: string[];
+  // Populated either via a completed Supplier Response (hasSupplier:
+  // true) or directly at creation (hasSupplier: false, Stage 7.11's own
+  // evidence upload section).
+  evidenceDocumentNames?: string[];
 };

@@ -1,8 +1,4 @@
-import type {
-  DataSourceType,
-  ExternalSupplierProduct,
-  FieldStatus,
-} from "@/lib/types";
+import type { ExternalSupplierProduct, FieldStatus } from "@/lib/types";
 import { externalSupplierProducts } from "@/lib/mock-data";
 import { getOrganization } from "@/lib/services/mockOrganizationService";
 
@@ -15,7 +11,11 @@ function generateExternalSupplierProductId(): string {
 }
 
 export interface CreateExternalSupplierProductInput {
-  supplierCompanyName: string;
+  hasSupplier: boolean;
+  /** Required by caller/action validation when hasSupplier is true;
+   * never collected (and always ignored below) when hasSupplier is
+   * false — see lib/types/external-supplier-product.ts. */
+  supplierCompanyName?: string;
   supplierContactName?: string;
   supplierEmail?: string;
   supplierCountry?: string;
@@ -25,22 +25,42 @@ export interface CreateExternalSupplierProductInput {
   knownMaterialFamily?: string;
   knownMaterialComposition?: string;
   knownWeightGrams?: number;
-  /**
-   * Caller decides MANUFACTURER_PROVIDED vs IMPORTED — see
-   * components/packaging/add-component-flow.tsx (the "Add External
-   * Supplier Product" path always passes MANUFACTURER_PROVIDED; "Use
-   * Existing Manufacturer-Provided Data" always passes IMPORTED). This
-   * service doesn't decide that judgment call itself, it just stores it.
-   */
-  sourceType: DataSourceType;
+  knownDimensions?: string;
+  knownThicknessMm?: number;
+  knownPackagingFunction?: string;
+  totalRecycledContentPercent?: number;
+  pcrYieldPercent?: number;
+  preConsumerYieldPercent?: number;
+  dfrGrade?: string;
+  heavyMetalPpm?: number;
+  pfasStatus?: FieldStatus;
+  reachSvhcStatus?: FieldStatus;
+  scipCode?: string;
+  rohsStatus?: FieldStatus;
+  fcmStatus?: FieldStatus;
+  omlTestScore?: string;
+  sterilizationProfile?: string;
+  evidenceDocumentNames?: string[];
 }
 
 // Maps to: POST /api/v1/manufacturers/{manufacturerId}/external-supplier-products
 // TODO: derive manufacturerId from auth context once real auth exists.
 //
-// Always starts UNVERIFIED (DOMAIN.md §8a) — nothing in this stage
-// upgrades that. A real Supplier later "claiming" this record (setting
-// claimedBySupplierId) is Stage 7.4/7.5+ territory, not built here.
+// Stage 7.11 — sourceType is always MANUFACTURER_PROVIDED here for BOTH
+// Add Component paths (the caller no longer decides it — see
+// CreateExternalSupplierProductInput's old comment, now superseded);
+// only a hasSupplier:true record can later move to
+// EXTERNAL_REQUEST_RESPONSE (requestInformationFromSupplier/
+// submitSupplierResponse below). verificationStatus always starts
+// UNVERIFIED and, for hasSupplier:false, stays that way permanently —
+// there is no supplier who could ever approve it. A real Supplier later
+// "claiming" a hasSupplier:true record (setting claimedBySupplierId) is
+// not built here (AGENTS.md §11).
+//
+// Supplier-identity fields (company name/contact/email/country/SKU)
+// are force-blanked when hasSupplier is false, even if a caller
+// mistakenly passes them — belt-and-suspenders, matching this file's
+// other defensive checks.
 export async function createExternalSupplierProduct(
   manufacturerId: string,
   input: CreateExternalSupplierProductInput
@@ -48,17 +68,42 @@ export async function createExternalSupplierProduct(
   const product: ExternalSupplierProduct = {
     id: generateExternalSupplierProductId(),
     createdByManufacturerId: manufacturerId,
-    supplierCompanyName: input.supplierCompanyName,
-    supplierContactName: input.supplierContactName || undefined,
-    supplierEmail: input.supplierEmail || undefined,
-    supplierCountry: input.supplierCountry || undefined,
+    hasSupplier: input.hasSupplier,
+    supplierCompanyName: input.hasSupplier
+      ? input.supplierCompanyName || undefined
+      : undefined,
+    supplierContactName: input.hasSupplier
+      ? input.supplierContactName || undefined
+      : undefined,
+    supplierEmail: input.hasSupplier ? input.supplierEmail || undefined : undefined,
+    supplierCountry: input.hasSupplier
+      ? input.supplierCountry || undefined
+      : undefined,
     productName: input.productName,
-    supplierSku: input.supplierSku || undefined,
+    supplierSku: input.hasSupplier ? input.supplierSku || undefined : undefined,
     gtin: input.gtin || undefined,
     knownMaterialFamily: input.knownMaterialFamily || undefined,
     knownMaterialComposition: input.knownMaterialComposition || undefined,
     knownWeightGrams: input.knownWeightGrams,
-    sourceType: input.sourceType,
+    knownDimensions: input.knownDimensions || undefined,
+    knownThicknessMm: input.knownThicknessMm,
+    knownPackagingFunction: input.knownPackagingFunction || undefined,
+    totalRecycledContentPercent: input.totalRecycledContentPercent,
+    pcrYieldPercent: input.pcrYieldPercent,
+    preConsumerYieldPercent: input.preConsumerYieldPercent,
+    dfrGrade: input.dfrGrade || undefined,
+    heavyMetalPpm: input.heavyMetalPpm,
+    pfasStatus: input.pfasStatus,
+    reachSvhcStatus: input.reachSvhcStatus,
+    scipCode: input.scipCode || undefined,
+    rohsStatus: input.rohsStatus,
+    fcmStatus: input.fcmStatus,
+    omlTestScore: input.omlTestScore || undefined,
+    sterilizationProfile: input.sterilizationProfile || undefined,
+    evidenceDocumentNames: input.evidenceDocumentNames?.length
+      ? input.evidenceDocumentNames
+      : undefined,
+    sourceType: "MANUFACTURER_PROVIDED",
     verificationStatus: "UNVERIFIED",
     responseStatus: "NOT_SENT",
   };
@@ -103,6 +148,11 @@ export interface RequestInformationResult {
 // Re-requesting reuses the same token rather than minting a new one —
 // a link already shared (e.g. copied into a real email by the
 // manufacturer) must keep working.
+//
+// Stage 7.11 — belt-and-suspenders guard: the UI never renders this
+// action for a hasSupplier:false record (there is no supplier to
+// request anything from), but the service itself refuses too, in case
+// it's ever called directly.
 export async function requestInformationFromSupplier(
   externalSupplierProductId: string,
   supplierEmailOverride?: string
@@ -115,10 +165,14 @@ export async function requestInformationFromSupplier(
       `Unknown external supplier product: ${externalSupplierProductId}`
     );
   }
-  // Records created via the "Use Existing Manufacturer-Provided Data"
-  // path (sourceType 'IMPORTED') never collect a supplier email up
-  // front — same as Stage 7.3's inviteSupplier, an email can be
-  // supplied here and is stored onto the record for next time.
+  if (!product.hasSupplier) {
+    throw new Error(
+      "This record has no associated supplier — there is nothing to request."
+    );
+  }
+  // Records created via the "Add External Supplier Product" path don't
+  // always collect an email up front either — an email can be supplied
+  // here and is stored onto the record for next time.
   if (supplierEmailOverride?.trim()) {
     product.supplierEmail = supplierEmailOverride.trim();
   }
@@ -210,7 +264,7 @@ export interface SubmitSupplierResponseInput {
   reachSvhcStatus?: FieldStatus;
   scipCode?: string;
   rohsStatus?: FieldStatus;
-  responseEvidenceDocumentNames?: string[];
+  evidenceDocumentNames?: string[];
 }
 
 // Maps to: POST /api/v1/public/supplier-response/{token}/submit — no auth.
@@ -222,6 +276,11 @@ export interface SubmitSupplierResponseInput {
 // AGENTS.md §11); it stays an ExternalSupplierProduct, just an upgraded
 // one. Resubmitting (e.g. the supplier revisits the link later to make
 // a correction) is allowed — it simply overwrites the previous values.
+//
+// Stage 7.11 — a hasSupplier:false record never has a responseToken
+// (requestInformationFromSupplier refuses to generate one for it), so
+// this is naturally unreachable for it; the explicit check below is
+// belt-and-suspenders, matching this file's other defensive guards.
 export async function submitSupplierResponse(
   token: string,
   input: SubmitSupplierResponseInput
@@ -231,6 +290,9 @@ export async function submitSupplierResponse(
   );
   if (!product) {
     throw new Error("This response link is invalid or has expired.");
+  }
+  if (!product.hasSupplier) {
+    throw new Error("This record has no associated supplier response to submit.");
   }
 
   if (input.supplierCompanyName?.trim()) {
@@ -259,13 +321,110 @@ export async function submitSupplierResponse(
   product.reachSvhcStatus = input.reachSvhcStatus;
   product.scipCode = input.scipCode?.trim() || undefined;
   product.rohsStatus = input.rohsStatus;
-  product.responseEvidenceDocumentNames = input.responseEvidenceDocumentNames?.length
-    ? input.responseEvidenceDocumentNames
+  product.evidenceDocumentNames = input.evidenceDocumentNames?.length
+    ? input.evidenceDocumentNames
     : undefined;
 
   product.responseStatus = "COMPLETED";
   product.sourceType = "EXTERNAL_REQUEST_RESPONSE";
   product.verificationStatus = "SUPPLIER_APPROVED";
+
+  return product;
+}
+
+export interface UpdateExternalSupplierProductInput {
+  supplierCompanyName?: string;
+  supplierContactName?: string;
+  supplierEmail?: string;
+  supplierCountry?: string;
+  productName?: string;
+  supplierSku?: string;
+  gtin?: string;
+  knownMaterialFamily?: string;
+  knownMaterialComposition?: string;
+  knownWeightGrams?: number;
+  knownDimensions?: string;
+  knownThicknessMm?: number;
+  knownPackagingFunction?: string;
+  totalRecycledContentPercent?: number;
+  pcrYieldPercent?: number;
+  preConsumerYieldPercent?: number;
+  dfrGrade?: string;
+  heavyMetalPpm?: number;
+  pfasStatus?: FieldStatus;
+  reachSvhcStatus?: FieldStatus;
+  scipCode?: string;
+  rohsStatus?: FieldStatus;
+  fcmStatus?: FieldStatus;
+  omlTestScore?: string;
+  sterilizationProfile?: string;
+  evidenceDocumentNames?: string[];
+}
+
+// Maps to: PATCH /api/v1/external-supplier-products/{id}
+// Lets the manufacturer view/edit the full record after creation
+// (previously creatable only — there was no way back in). Refuses to
+// touch anything once a hasSupplier:true record's Supplier Response has
+// been COMPLETED: at that point the compliance fields (and the
+// supplier's own identity details) are supplier-owned/approved data
+// (AGENTS.md §6 ownership rules) — the manufacturer silently overwriting
+// them here would undermine that approval without the actual supplier's
+// involvement. Editing is unrestricted before a response is completed,
+// and always unrestricted for hasSupplier:false (no such concept
+// applies — see lib/types/external-supplier-product.ts).
+export async function updateExternalSupplierProduct(
+  id: string,
+  input: UpdateExternalSupplierProductInput
+): Promise<ExternalSupplierProduct> {
+  const product = externalSupplierProducts.find((item) => item.id === id);
+  if (!product) {
+    throw new Error(`Unknown external supplier product: ${id}`);
+  }
+  if (product.hasSupplier && product.responseStatus === "COMPLETED") {
+    throw new Error(
+      "This record's data was provided by the supplier via a completed response and can no longer be edited here."
+    );
+  }
+
+  if (input.productName?.trim()) {
+    product.productName = input.productName.trim();
+  }
+  // Supplier-identity fields only ever apply to a hasSupplier:true
+  // record — force-blanked otherwise, same defensive pattern
+  // createExternalSupplierProduct already uses.
+  if (product.hasSupplier) {
+    if (input.supplierCompanyName?.trim()) {
+      product.supplierCompanyName = input.supplierCompanyName.trim();
+    }
+    product.supplierContactName = input.supplierContactName?.trim() || undefined;
+    product.supplierEmail = input.supplierEmail?.trim() || undefined;
+    product.supplierCountry = input.supplierCountry?.trim() || undefined;
+    product.supplierSku = input.supplierSku?.trim() || undefined;
+  }
+  product.gtin = input.gtin?.trim() || undefined;
+  product.knownMaterialFamily = input.knownMaterialFamily?.trim() || undefined;
+  product.knownMaterialComposition =
+    input.knownMaterialComposition?.trim() || undefined;
+  product.knownWeightGrams = input.knownWeightGrams;
+  product.knownDimensions = input.knownDimensions?.trim() || undefined;
+  product.knownThicknessMm = input.knownThicknessMm;
+  product.knownPackagingFunction =
+    input.knownPackagingFunction?.trim() || undefined;
+  product.totalRecycledContentPercent = input.totalRecycledContentPercent;
+  product.pcrYieldPercent = input.pcrYieldPercent;
+  product.preConsumerYieldPercent = input.preConsumerYieldPercent;
+  product.dfrGrade = input.dfrGrade?.trim() || undefined;
+  product.heavyMetalPpm = input.heavyMetalPpm;
+  product.pfasStatus = input.pfasStatus;
+  product.reachSvhcStatus = input.reachSvhcStatus;
+  product.scipCode = input.scipCode?.trim() || undefined;
+  product.rohsStatus = input.rohsStatus;
+  product.fcmStatus = input.fcmStatus;
+  product.omlTestScore = input.omlTestScore?.trim() || undefined;
+  product.sterilizationProfile = input.sterilizationProfile?.trim() || undefined;
+  product.evidenceDocumentNames = input.evidenceDocumentNames?.length
+    ? input.evidenceDocumentNames
+    : undefined;
 
   return product;
 }

@@ -9,6 +9,7 @@ import {
   COMPONENT_READINESS_LABELS,
   COMPONENT_READINESS_TO_PILL,
   EVIDENCE_REQUIREMENT_LABEL,
+  isExternalSupplierDataUsable,
   type ComponentReadiness,
   type PackagingReadinessSummary,
   type ReadinessFieldState,
@@ -66,8 +67,16 @@ export function PackagingReadinessPanel({
   summary: PackagingReadinessSummary;
   canRunAssessment: boolean;
 }) {
+  // "Unverified" here means genuinely no usable data yet, for either
+  // reason readiness.ts tracks: a hasSupplier:true record still
+  // awaiting its supplier's response, or ANY hasSupplier:false record
+  // (which is always "unverified" in the sense that nobody but the
+  // manufacturer ever confirmed it — see UNVERIFIED_COMPLETE).
   const hasUnverifiedRows = rows.some(
-    (row) => row.kind === "EXTERNAL" && row.externalProduct?.responseStatus !== "COMPLETED"
+    (row) =>
+      row.kind === "EXTERNAL" &&
+      (row.externalProduct?.hasSupplier === false ||
+        !isExternalSupplierDataUsable(row.externalProduct))
   );
 
   return (
@@ -280,13 +289,18 @@ function ComponentReadinessRow({
 // "View Component" link here (unlike the assessment results page's
 // equivalent) — this row already lives on the same Packaging Item
 // Details page as the component's own card, just below.
-// Stage 7.10 — an external component's row now varies by
-// responseStatus: unchanged ⚠/✕ styling for NOT_SENT/SENT (nothing
-// PPWR-required is known from this source yet), but a completed
-// Supplier Response gets its own per-field checklist (reusing
-// FieldReadinessLine, same as native components) plus the correct
-// overallStatus pill (COMPONENT_READINESS_TO_PILL/LABELS — never a
-// hardcoded "Unverified").
+// Stage 7.10/7.11 — an external component's row varies by whether its
+// data is currently usable (isExternalSupplierDataUsable: a completed
+// Supplier Response for hasSupplier:true, or ANY hasSupplier:false
+// record — see lib/readiness.ts). Not usable yet gets the original
+// ⚠/✕ "nothing PPWR-required known" styling; usable gets its own
+// per-field checklist (same shape as native components' FieldReadinessLine)
+// plus the correct overallStatus pill (COMPONENT_READINESS_TO_PILL/
+// LABELS — never a hardcoded "Unverified"). The per-field/known-field
+// wording additionally distinguishes hasSupplier:true ("Supplier-
+// Provided", once confirmed) from hasSupplier:false ("Self-Reported",
+// which is what it will always say — see external-packaging-component-card.tsx's
+// permanence note).
 function ExternalComponentReadinessRow({
   component,
   externalProduct,
@@ -302,7 +316,12 @@ function ExternalComponentReadinessRow({
         sourceType: "MANUFACTURER_PROVIDED",
         verificationStatus: "UNVERIFIED",
       });
-  const isCompletedResponse = externalProduct?.responseStatus === "COMPLETED";
+  const hasSupplier = externalProduct?.hasSupplier ?? true;
+  const isDataUsable = isExternalSupplierDataUsable(externalProduct);
+  const providedFieldLabel = hasSupplier ? "Supplier-Provided" : "Self-Reported";
+  const missingFieldSuffix = hasSupplier
+    ? " — Not answered by supplier"
+    : " — Not provided";
 
   const knownFields: { label: string; value?: string }[] = [
     { label: "Material Family", value: externalProduct?.knownMaterialFamily },
@@ -322,7 +341,7 @@ function ExternalComponentReadinessRow({
   return (
     <div
       className={
-        isCompletedResponse
+        isDataUsable
           ? "rounded-md border border-slate-200 p-4"
           : "rounded-md border border-amber-200 bg-amber-50/40 p-4"
       }
@@ -348,11 +367,10 @@ function ExternalComponentReadinessRow({
           value ? (
             <p
               key={label}
-              className={`text-sm ${isCompletedResponse ? "text-emerald-700" : "text-amber-700"}`}
+              className={`text-sm ${isDataUsable ? "text-emerald-700" : "text-amber-700"}`}
             >
-              <span aria-hidden="true">{isCompletedResponse ? "✓" : "⚠"}</span>{" "}
-              {label} —{" "}
-              {isCompletedResponse ? "Supplier-Provided" : "Manufacturer Provided"}
+              <span aria-hidden="true">{isDataUsable ? "✓" : "⚠"}</span> {label} —{" "}
+              {isDataUsable ? providedFieldLabel : "Manufacturer Provided"}
             </p>
           ) : (
             <p key={label} className="text-sm text-slate-500">
@@ -361,13 +379,13 @@ function ExternalComponentReadinessRow({
           )
         )}
 
-        {isCompletedResponse ? (
+        {isDataUsable ? (
           <>
             {/* Deliberately NOT FieldReadinessLine's generic
                 NOT_REQUESTED suffix ("Not yet requested") — there's no
-                request pipeline here to point at; a field the supplier
-                simply left blank on their completed response is its
-                own distinct state. */}
+                request pipeline here to point at; a field left blank
+                (whether by the supplier or the manufacturer itself) is
+                its own distinct state. */}
             {readiness.requiredFields.map(({ field, state }) => (
               <p
                 key={field}
@@ -375,7 +393,7 @@ function ExternalComponentReadinessRow({
               >
                 <span aria-hidden="true">{state === "AUTHORIZED" ? "✓" : "✕"}</span>{" "}
                 {field}
-                {state === "AUTHORIZED" ? "" : " — Not answered by supplier"}
+                {state === "AUTHORIZED" ? "" : missingFieldSuffix}
               </p>
             ))}
             <p
@@ -385,7 +403,7 @@ function ExternalComponentReadinessRow({
                 {readiness.evidence.state === "AUTHORIZED" ? "✓" : "✕"}
               </span>{" "}
               {EVIDENCE_REQUIREMENT_LABEL}
-              {readiness.evidence.state === "AUTHORIZED" ? "" : " — Not provided"}
+              {readiness.evidence.state === "AUTHORIZED" ? "" : missingFieldSuffix}
             </p>
           </>
         ) : (

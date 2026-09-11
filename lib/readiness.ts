@@ -76,7 +76,24 @@ export interface ComponentReadiness {
   // trust level (AGENTS.md's "Supplier Response Link" section is
   // explicit that it must not be conflated with a fully onboarded
   // SupplierProduct).
-  overallStatus: "COMPLETE" | "PARTIAL" | "NOT_READY" | "UNVERIFIED" | "SUPPLIER_RESPONSE";
+  //
+  // Stage 7.11 — UNVERIFIED_COMPLETE added for a `hasSupplier: false`
+  // component (no supplier entity at all — "Use Existing Manufacturer-
+  // Provided Data") once every REQUIRED_PPWR_FIELDS value + evidence is
+  // present. NOT the same as SUPPLIER_RESPONSE: nobody ever confirmed
+  // this data, and nobody ever will (there's no supplier to). It's also
+  // NOT plain UNVERIFIED: that would erase the real, useful distinction
+  // between "the manufacturer entered nothing" and "the manufacturer
+  // entered everything, it's just never going to be verified" — the
+  // whole point of this state is to keep completeness honestly visible
+  // while verification stays permanently absent.
+  overallStatus:
+    | "COMPLETE"
+    | "PARTIAL"
+    | "NOT_READY"
+    | "UNVERIFIED"
+    | "SUPPLIER_RESPONSE"
+    | "UNVERIFIED_COMPLETE";
 }
 
 /**
@@ -181,16 +198,38 @@ const EXTERNAL_FIELD_PROVIDED_CHECKS: Record<
 };
 
 /**
+ * Stage 7.11 — whether an ExternalSupplierProduct's compliance fields
+ * are ever legitimately readable at all, regardless of whether any
+ * individual field actually holds a value yet:
+ * - hasSupplier: false ("Use Existing Manufacturer-Provided Data") —
+ *   there's no separate response step; whatever the manufacturer
+ *   entered at creation IS the permanent, sole record, immediately.
+ * - hasSupplier: true ("Add External Supplier Product") — the
+ *   manufacturer's own guesses at creation are NOT usable; only once
+ *   the actual supplier completes a response (`responseStatus ===
+ *   'COMPLETED'`) does this data become real (Stage 7.10).
+ * Exported so mockAssessmentService can reuse the exact same gate for
+ * evidence, not just named fields.
+ */
+export function isExternalSupplierDataUsable(
+  product: ExternalSupplierProduct | undefined
+): boolean {
+  if (!product) return false;
+  return product.hasSupplier === false || product.responseStatus === "COMPLETED";
+}
+
+/**
  * Every field label (across all sections, not just REQUIRED_PPWR_FIELDS)
- * that a completed Supplier Response has actually provided a real value
- * for. Returns `[]` for anything short of `responseStatus: 'COMPLETED'`
- * — a SENT-but-not-yet-answered request must not start counting as
- * partial progress.
+ * that this ExternalSupplierProduct has actually provided a real value
+ * for — gated by isExternalSupplierDataUsable above, so a hasSupplier:
+ * true record's manufacturer-guessed fields never count before the
+ * actual supplier confirms them, while a hasSupplier:false record's
+ * fields count immediately (there's nothing else to wait for).
  */
 export function getExternalSupplierProvidedFields(
   product: ExternalSupplierProduct | undefined
 ): string[] {
-  if (!product || product.responseStatus !== "COMPLETED") return [];
+  if (!product || !isExternalSupplierDataUsable(product)) return [];
   return Object.entries(EXTERNAL_FIELD_PROVIDED_CHECKS)
     .filter(([, isProvided]) => isProvided(product))
     .map(([field]) => field);
@@ -201,14 +240,15 @@ export function getExternalSupplierProvidedFields(
  * ExternalSupplierProduct (Stage 7.3) instead of a real SupplierProduct.
  * There's no DataRequest/DataApproval pipeline possible against it at
  * all (no supplier org to request from), so a required field is never
- * AUTHORIZED via that pipeline — but Stage 7.10 adds one real way a
- * field can still become genuinely known: the actual supplier
- * completing the Supplier Response Link (`responseStatus ===
- * 'COMPLETED'`; see getExternalSupplierProvidedFields above). Absent
- * that, every required field and the evidence requirement stays
- * NOT_REQUESTED (accurate: never part of any request, because no
- * request is possible) and satisfiedCount is 0, exactly as before
- * Stage 7.10. This still contributes its real requiredCount to
+ * AUTHORIZED via that pipeline. Two real ways a field can still become
+ * genuinely known instead (see isExternalSupplierDataUsable above):
+ * the actual supplier completing the Supplier Response Link
+ * (`hasSupplier: true`, `responseStatus === 'COMPLETED'`; Stage 7.10),
+ * or the manufacturer entering it directly with no supplier involved at
+ * all (`hasSupplier: false`; Stage 7.11). Absent either, every required
+ * field and the evidence requirement stays NOT_REQUESTED (accurate:
+ * never part of any request, because no request is possible) and
+ * satisfiedCount is 0. This still contributes its real requiredCount to
  * summarizeReadiness below either way, so a packaging item's overall %
  * honestly reflects this component's actual state.
  */
@@ -217,17 +257,18 @@ export function computeExternalComponentReadiness(
 ): ComponentReadiness {
   const providedFields = getExternalSupplierProvidedFields(externalProduct);
   const hasEvidence =
-    externalProduct?.responseStatus === "COMPLETED" &&
-    (externalProduct.responseEvidenceDocumentNames?.length ?? 0) > 0;
+    isExternalSupplierDataUsable(externalProduct) &&
+    (externalProduct?.evidenceDocumentNames?.length ?? 0) > 0;
 
   const requiredFields: RequiredFieldReadiness[] = REQUIRED_PPWR_FIELDS.map((field) => ({
     field,
-    // Reusing "AUTHORIZED" here is deliberate, not a stretch: once a
-    // response is COMPLETED, this value came directly from the actual
-    // supplier (verificationStatus 'SUPPLIER_APPROVED' — see
-    // buildExternalSupplierProvenance), which is a genuinely different
-    // and more trustworthy state than "not requested". The distinction
-    // from a natively-authorized field lives in overallStatus below,
+    // Reusing "AUTHORIZED" here is deliberate, not a stretch: once this
+    // data is usable (see isExternalSupplierDataUsable), the value is
+    // either supplier-confirmed (hasSupplier: true, COMPLETED) or the
+    // manufacturer's own sole-source record (hasSupplier: false) — both
+    // are genuinely known values, a different and more meaningful state
+    // than "not requested". The distinction between those two — and
+    // from a natively-authorized field — lives in overallStatus below,
     // not in per-field state naming.
     state: providedFields.includes(field) ? "AUTHORIZED" : "NOT_REQUESTED",
   }));
@@ -241,7 +282,13 @@ export function computeExternalComponentReadiness(
   if (satisfiedCount === 0) {
     overallStatus = "UNVERIFIED";
   } else if (satisfiedCount === requiredCount) {
-    overallStatus = "SUPPLIER_RESPONSE";
+    // Stage 7.11 — a hasSupplier:false component can only ever land on
+    // UNVERIFIED or UNVERIFIED_COMPLETE (never SUPPLIER_RESPONSE — no
+    // supplier ever confirmed anything here) or PARTIAL in between,
+    // same three-tier shape as a hasSupplier:true component, just with
+    // a different (permanently unverified) terminal label.
+    overallStatus =
+      externalProduct?.hasSupplier === false ? "UNVERIFIED_COMPLETE" : "SUPPLIER_RESPONSE";
   } else {
     overallStatus = "PARTIAL";
   }
@@ -275,6 +322,12 @@ export const COMPONENT_READINESS_TO_PILL: Record<
   // The label text ("Supplier-Provided" vs "Complete") is what keeps
   // this from reading as equivalent to native COMPLETE.
   SUPPLIER_RESPONSE: "complete",
+  // Stage 7.11 — deliberately the SAME icon family as PARTIAL/UNVERIFIED
+  // (⚠), not SUPPLIER_RESPONSE's ✓ — this data was never confirmed by
+  // anyone but the manufacturer itself, and never will be, no matter how
+  // complete it is. The label text ("Complete — Unverified") is what
+  // carries the completeness signal instead.
+  UNVERIFIED_COMPLETE: "missing",
 };
 
 export const COMPONENT_READINESS_LABELS: Record<
@@ -286,6 +339,7 @@ export const COMPONENT_READINESS_LABELS: Record<
   NOT_READY: "Not Requested",
   UNVERIFIED: "Unverified",
   SUPPLIER_RESPONSE: "Supplier-Provided",
+  UNVERIFIED_COMPLETE: "Complete — Unverified",
 };
 
 export interface MissingGroup {

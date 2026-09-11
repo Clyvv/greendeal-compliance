@@ -10,12 +10,10 @@ import {
 import {
   createExternalSupplierProduct,
   requestInformationFromSupplier,
+  updateExternalSupplierProduct,
 } from "@/lib/services/mockExternalSupplierService";
 import { CURRENT_MANUFACTURER_ORG_ID } from "@/lib/constants";
-import type {
-  DataSourceType,
-  PackagingComponent,
-} from "@/lib/types";
+import type { ExternalSupplierProduct, FieldStatus, PackagingComponent } from "@/lib/types";
 import type { RequestInformationResult } from "@/lib/services/mockExternalSupplierService";
 
 // Invoked directly via a plain <form action={...}> (not a client
@@ -89,12 +87,15 @@ export async function addSupplierProductComponentAction(
 export interface AddExternalSupplierProductComponentInput {
   packagingItemId: string;
   role: string;
-  /** Decided by the caller — see
-   * components/packaging/add-component-flow.tsx for exactly which of
-   * the two "Add External Supplier Product" / "Use Existing
-   * Manufacturer-Provided Data" paths sets which value. */
-  sourceType: DataSourceType;
-  supplierCompanyName: string;
+  /** Stage 7.11 — the real discriminator between the two Add Component
+   * paths (see components/packaging/add-component-flow.tsx and
+   * lib/types/external-supplier-product.ts). `sourceType` is no longer
+   * caller-decided — createExternalSupplierProduct always sets it to
+   * MANUFACTURER_PROVIDED at creation regardless of this flag. */
+  hasSupplier: boolean;
+  /** Required (and validated below) when hasSupplier is true; never
+   * collected — and ignored even if passed — when hasSupplier is false. */
+  supplierCompanyName?: string;
   supplierContactName?: string;
   supplierEmail?: string;
   supplierCountry?: string;
@@ -104,11 +105,28 @@ export interface AddExternalSupplierProductComponentInput {
   knownMaterialFamily?: string;
   knownMaterialComposition?: string;
   knownWeightGrams?: number;
+  knownDimensions?: string;
+  knownThicknessMm?: number;
+  knownPackagingFunction?: string;
+  totalRecycledContentPercent?: number;
+  pcrYieldPercent?: number;
+  preConsumerYieldPercent?: number;
+  dfrGrade?: string;
+  heavyMetalPpm?: number;
+  pfasStatus?: FieldStatus;
+  reachSvhcStatus?: FieldStatus;
+  scipCode?: string;
+  rohsStatus?: FieldStatus;
+  fcmStatus?: FieldStatus;
+  omlTestScore?: string;
+  sterilizationProfile?: string;
+  evidenceDocumentNames?: string[];
 }
 
-// Stage 7.3 — "Add External Supplier Product" / "Use Existing
-// Manufacturer-Provided Data" paths of the Add Component flow. Creates
-// the ExternalSupplierProduct record first, then the component that
+// Stage 7.3 (rebuilt in Stage 7.11) — "Add External Supplier Product"
+// (hasSupplier: true) / "Use Existing Manufacturer-Provided Data"
+// (hasSupplier: false) paths of the Add Component flow. Creates the
+// ExternalSupplierProduct record first, then the component that
 // references it — two service calls, same two-step shape
 // createDataRequest/updateComponentAuthorizationStatus already uses
 // elsewhere in this file's sibling (lib/requests/actions.ts), kept as
@@ -118,33 +136,60 @@ export async function addExternalSupplierProductComponentAction(
   input: AddExternalSupplierProductComponentInput
 ): Promise<PackagingComponent> {
   const role = input.role.trim();
-  const supplierCompanyName = input.supplierCompanyName.trim();
   const productName = input.productName.trim();
 
   if (!role) {
     throw new Error("Component role is required.");
   }
-  if (!supplierCompanyName) {
-    throw new Error("Supplier / source name is required.");
-  }
   if (!productName) {
     throw new Error("Product name is required.");
+  }
+
+  // Belt-and-suspenders: supplier identity is only ever meaningful (and
+  // only ever required) when hasSupplier is true — a hasSupplier:false
+  // record never collects it, no matter what a caller passes.
+  let supplierCompanyName: string | undefined;
+  if (input.hasSupplier) {
+    supplierCompanyName = input.supplierCompanyName?.trim();
+    if (!supplierCompanyName) {
+      throw new Error("Supplier company name is required.");
+    }
   }
 
   const externalProduct = await createExternalSupplierProduct(
     CURRENT_MANUFACTURER_ORG_ID,
     {
+      hasSupplier: input.hasSupplier,
       supplierCompanyName,
-      supplierContactName: input.supplierContactName?.trim(),
-      supplierEmail: input.supplierEmail?.trim(),
-      supplierCountry: input.supplierCountry?.trim(),
+      supplierContactName: input.hasSupplier
+        ? input.supplierContactName?.trim()
+        : undefined,
+      supplierEmail: input.hasSupplier ? input.supplierEmail?.trim() : undefined,
+      supplierCountry: input.hasSupplier
+        ? input.supplierCountry?.trim()
+        : undefined,
       productName,
-      supplierSku: input.supplierSku?.trim(),
+      supplierSku: input.hasSupplier ? input.supplierSku?.trim() : undefined,
       gtin: input.gtin?.trim(),
       knownMaterialFamily: input.knownMaterialFamily?.trim(),
       knownMaterialComposition: input.knownMaterialComposition?.trim(),
       knownWeightGrams: input.knownWeightGrams,
-      sourceType: input.sourceType,
+      knownDimensions: input.knownDimensions?.trim(),
+      knownThicknessMm: input.knownThicknessMm,
+      knownPackagingFunction: input.knownPackagingFunction?.trim(),
+      totalRecycledContentPercent: input.totalRecycledContentPercent,
+      pcrYieldPercent: input.pcrYieldPercent,
+      preConsumerYieldPercent: input.preConsumerYieldPercent,
+      dfrGrade: input.dfrGrade?.trim(),
+      heavyMetalPpm: input.heavyMetalPpm,
+      pfasStatus: input.pfasStatus,
+      reachSvhcStatus: input.reachSvhcStatus,
+      scipCode: input.scipCode?.trim(),
+      rohsStatus: input.rohsStatus,
+      fcmStatus: input.fcmStatus,
+      omlTestScore: input.omlTestScore?.trim(),
+      sterilizationProfile: input.sterilizationProfile?.trim(),
+      evidenceDocumentNames: input.evidenceDocumentNames,
     }
   );
 
@@ -189,4 +234,58 @@ export async function requestInformationFromSupplierAction(
   );
   revalidatePackagingItem(packagingItemId);
   return result;
+}
+
+export interface UpdateExternalSupplierProductActionInput {
+  packagingItemId: string;
+  externalSupplierProductId: string;
+  supplierCompanyName?: string;
+  supplierContactName?: string;
+  supplierEmail?: string;
+  supplierCountry?: string;
+  productName: string;
+  supplierSku?: string;
+  gtin?: string;
+  knownMaterialFamily?: string;
+  knownMaterialComposition?: string;
+  knownWeightGrams?: number;
+  knownDimensions?: string;
+  knownThicknessMm?: number;
+  knownPackagingFunction?: string;
+  totalRecycledContentPercent?: number;
+  pcrYieldPercent?: number;
+  preConsumerYieldPercent?: number;
+  dfrGrade?: string;
+  heavyMetalPpm?: number;
+  pfasStatus?: FieldStatus;
+  reachSvhcStatus?: FieldStatus;
+  scipCode?: string;
+  rohsStatus?: FieldStatus;
+  fcmStatus?: FieldStatus;
+  omlTestScore?: string;
+  sterilizationProfile?: string;
+  evidenceDocumentNames?: string[];
+}
+
+// The "View / Edit Details" affordance on an External Supplier
+// Product's component card — invoked directly from the client
+// ExternalSupplierProductDetailForm, matching this file's other
+// actions. See mockExternalSupplierService.updateExternalSupplierProduct
+// for why this refuses to change anything once a hasSupplier:true
+// record's Supplier Response has been completed.
+export async function updateExternalSupplierProductAction(
+  input: UpdateExternalSupplierProductActionInput
+): Promise<ExternalSupplierProduct> {
+  const productName = input.productName.trim();
+  if (!productName) {
+    throw new Error("Product name is required.");
+  }
+
+  const updated = await updateExternalSupplierProduct(
+    input.externalSupplierProductId,
+    { ...input, productName }
+  );
+
+  revalidatePackagingItem(input.packagingItemId);
+  return updated;
 }

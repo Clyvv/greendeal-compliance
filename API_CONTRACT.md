@@ -99,6 +99,31 @@ swap doesn't require new UI states later.
 |---|---|---|
 | `createExternalSupplierProduct(manufacturerId, input)` | `POST /api/v1/manufacturers/{id}/external-supplier-products` | 🟡 |
 | `getExternalSupplierProduct(id)` | `GET /api/v1/external-supplier-products/{id}` | 🟡 |
+| `updateExternalSupplierProduct(id, input)` | `PATCH /api/v1/external-supplier-products/{id}` | 🟡 |
+
+`updateExternalSupplierProduct` backs the "View / Edit Details" link on
+an External Supplier Product's component card
+(`app/(app)/manufacturer/packaging-items/[id]/components/[componentId]`,
+`components/packaging/external-supplier-product-detail-form.tsx`) —
+previously a record was creatable but never viewable/editable again.
+Refuses to change anything once a `hasSupplier: true` record's Supplier
+Response has been `COMPLETED` (that data is supplier-owned at that
+point — see the function's own comment); the form renders fully
+read-only in that case rather than silently no-op-ing a save.
+
+Stage 7.11 — `input.hasSupplier` is now the real discriminator between
+the Add Component flow's two external paths (previously a caller-chosen
+`sourceType` of `MANUFACTURER_PROVIDED` vs `IMPORTED`, which conflated
+"a real supplier exists, partially known" with "no supplier exists at
+all" as two variants of one form). `sourceType` is no longer
+caller-decided — this function always sets it to `MANUFACTURER_PROVIDED`
+at creation for both paths; only `submitSupplierResponse` (below) can
+later move a `hasSupplier: true` record to `EXTERNAL_REQUEST_RESPONSE`.
+`input` also grew the full Circularity/Chemical Safety/Specialized
+Domain/evidence field set (previously only on `SubmitSupplierResponseInput`)
+so "Use Existing Manufacturer-Provided Data" (`hasSupplier: false`) can
+capture everything at creation time, since there's no later response
+step for it to arrive through.
 
 ### mockPublicRequestService (no auth — public-facing)
 
@@ -150,6 +175,23 @@ and `mockAssessmentService.runAssessment`, via a new
 `getExternalSupplierProvidedFields` helper — see that file's comments
 for why this is a distinct `SUPPLIER_RESPONSE` readiness state, not
 folded into native `COMPLETE`.
+
+Stage 7.11 — `requestInformationFromSupplier`/`submitSupplierResponse`
+both now refuse a `hasSupplier: false` record (there is no supplier to
+request anything from or receive a response from; the UI never even
+renders the affordance for one, but the service refuses too,
+belt-and-suspenders). `SubmitSupplierResponseInput`'s evidence field was
+renamed `responseEvidenceDocumentNames` → `evidenceDocumentNames` — it's
+now shared with `createExternalSupplierProduct`'s `hasSupplier: false`
+path, which populates the same `ExternalSupplierProduct.evidenceDocumentNames`
+field directly at creation instead of through a response. `lib/readiness.ts`
+gained `isExternalSupplierDataUsable(product)` — true for a completed
+`hasSupplier: true` response OR any `hasSupplier: false` record — as the
+single shared gate `getExternalSupplierProvidedFields`/
+`mockAssessmentService.runAssessment` both use, plus a new
+`UNVERIFIED_COMPLETE` readiness state for a fully-filled-in
+`hasSupplier: false` component (never `SUPPLIER_RESPONSE` — nobody but
+the manufacturer ever confirmed it).
 
 ---
 

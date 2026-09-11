@@ -23,7 +23,7 @@ export interface SubmitSupplierResponseActionInput {
   reachSvhcStatus?: FieldStatus;
   scipCode?: string;
   rohsStatus?: FieldStatus;
-  responseEvidenceDocumentNames?: string[];
+  evidenceDocumentNames?: string[];
 }
 
 function toNumber(value: string | undefined): number | undefined {
@@ -71,7 +71,7 @@ export async function submitSupplierResponseAction(
     reachSvhcStatus: input.reachSvhcStatus,
     scipCode: input.scipCode,
     rohsStatus: input.rohsStatus,
-    responseEvidenceDocumentNames: input.responseEvidenceDocumentNames,
+    evidenceDocumentNames: input.evidenceDocumentNames,
   });
 
   // The manufacturer-side packaging item page reads this record's

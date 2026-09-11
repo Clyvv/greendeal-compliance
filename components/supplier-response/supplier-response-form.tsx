@@ -45,7 +45,13 @@ interface FormState {
 
 function toInitialState(product: ExternalSupplierProduct): FormState {
   return {
-    supplierCompanyName: product.supplierCompanyName,
+    // This form is only ever reachable for a hasSupplier:true record
+    // (getSupplierResponseData looks up by responseToken, which a
+    // hasSupplier:false record never has — see
+    // mockExternalSupplierService.requestInformationFromSupplier's
+    // guard), so supplierCompanyName is always set in practice; the
+    // fallback is just to satisfy its now-optional type.
+    supplierCompanyName: product.supplierCompanyName ?? "",
     supplierContactName: product.supplierContactName ?? "",
     productName: product.productName,
     knownMaterialFamily: product.knownMaterialFamily ?? "",
@@ -101,7 +107,7 @@ export function SupplierResponseForm({
     toInitialState(externalSupplierProduct)
   );
   const [evidenceNames, setEvidenceNames] = useState<string[]>(
-    externalSupplierProduct.responseEvidenceDocumentNames ?? []
+    externalSupplierProduct.evidenceDocumentNames ?? []
   );
   const [pendingEvidenceName, setPendingEvidenceName] = useState("");
   const [isPending, startTransition] = useTransition();
@@ -143,7 +149,7 @@ export function SupplierResponseForm({
       try {
         await submitSupplierResponseAction(token, {
           ...form,
-          responseEvidenceDocumentNames: evidenceNames,
+          evidenceDocumentNames: evidenceNames,
         });
         setSubmitted(true);
       } catch (error) {

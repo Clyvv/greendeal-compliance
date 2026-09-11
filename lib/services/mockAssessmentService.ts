@@ -12,6 +12,7 @@ import {
   computeComponentReadiness,
   computeExternalComponentReadiness,
   getExternalSupplierProvidedFields,
+  isExternalSupplierDataUsable,
   EVIDENCE_REQUIREMENT_LABEL,
 } from "@/lib/readiness";
 import {
@@ -95,15 +96,16 @@ export async function runAssessment(
   // an ExternalSupplierProduct (Stage 7.3); branch the same way
   // app/(app)/manufacturer/packaging-items/[id]/page.tsx already does.
   //
-  // Stage 7.10 — a completed Supplier Response
-  // (externalProduct.responseStatus === 'COMPLETED') now feeds its
-  // actual field values in here too, using the exact same "what's
-  // provided" definition computeExternalComponentReadiness uses
-  // (getExternalSupplierProvidedFields) as authorizedAttributes — so
-  // lib/assessment-findings.ts's per-section checks naturally produce
+  // Stage 7.10/7.11 — usable data (see isExternalSupplierDataUsable:
+  // either a completed Supplier Response for a hasSupplier:true record,
+  // or ANY hasSupplier:false record — there's no separate response step
+  // for those) feeds its actual field values in here too, using the
+  // exact same "what's provided" definition computeExternalComponentReadiness
+  // uses (getExternalSupplierProvidedFields) as authorizedAttributes —
+  // so lib/assessment-findings.ts's per-section checks naturally produce
   // real PASS/WARNING/MISSING findings from this data instead of always
-  // reading it as fully absent. Anything short of COMPLETED still
-  // reports every field as absent (UNVERIFIED), unchanged from before.
+  // reading it as fully absent. Anything not yet usable still reports
+  // every field as absent (UNVERIFIED), unchanged from before.
   const inputs: ComponentAssessmentInput[] = await Promise.all(
     components.map(async (component) => {
       if (component.externalSupplierProductId) {
@@ -111,24 +113,24 @@ export async function runAssessment(
           component.externalSupplierProductId
         );
         const providedFields = getExternalSupplierProvidedFields(externalProduct);
-        const hasResponseEvidence =
-          externalProduct?.responseStatus === "COMPLETED" &&
-          (externalProduct.responseEvidenceDocumentNames?.length ?? 0) > 0;
+        const hasUsableEvidence =
+          isExternalSupplierDataUsable(externalProduct) &&
+          (externalProduct?.evidenceDocumentNames?.length ?? 0) > 0;
 
-        // A completed response's mocked evidence is filenames only (no
-        // full Evidence record — see ExternalSupplierProduct's
-        // responseEvidenceDocumentNames comment), so it's represented
-        // here as one synthetic Evidence-shaped item whose documentName
-        // matches EVIDENCE_REQUIREMENT_LABEL, the same synthetic label
-        // lib/readiness.ts's computeComponentReadiness already keys
-        // evidence authorization off of for native components.
-        const evidenceItems: Evidence[] = hasResponseEvidence
+        // Mocked evidence is filenames only (no full Evidence record —
+        // see ExternalSupplierProduct's evidenceDocumentNames comment),
+        // so it's represented here as one synthetic Evidence-shaped item
+        // whose documentName matches EVIDENCE_REQUIREMENT_LABEL, the
+        // same synthetic label lib/readiness.ts's computeComponentReadiness
+        // already keys evidence authorization off of for native
+        // components.
+        const evidenceItems: Evidence[] = hasUsableEvidence
           ? [
               {
-                id: `${component.externalSupplierProductId}-response-evidence`,
+                id: `${component.externalSupplierProductId}-evidence`,
                 productVersionId: "",
                 documentName: EVIDENCE_REQUIREMENT_LABEL,
-                evidenceType: "Supplier Response Evidence",
+                evidenceType: "Manufacturer-Reported Evidence",
                 issuingAuthority: "",
                 issueDate: "",
                 expirationDate: "",
@@ -137,7 +139,7 @@ export async function runAssessment(
               },
             ]
           : [];
-        const authorizedAttributes = hasResponseEvidence
+        const authorizedAttributes = hasUsableEvidence
           ? [...providedFields, EVIDENCE_REQUIREMENT_LABEL]
           : providedFields;
 

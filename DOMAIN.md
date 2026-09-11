@@ -383,9 +383,14 @@ type VerificationStatus =
 type ExternalSupplierProduct = {
   id: string
   createdByManufacturerId: string
-  supplierCompanyName: string
+  hasSupplier: boolean                // false = "Use Existing Manufacturer-
+                                       // Provided Data" path: no supplier
+                                       // entity exists at all, manufacturer
+                                       // is the sole/permanent data source
+  supplierCompanyName?: string        // omitted entirely when hasSupplier is false
   supplierContactName?: string
-  supplierEmail?: string
+  supplierEmail?: string              // required if hasSupplier is true
+                                       // (needed for the response-link flow)
   supplierCountry?: string
   productName: string
   supplierSku?: string
@@ -394,8 +399,12 @@ type ExternalSupplierProduct = {
   knownMaterialComposition?: string
   knownWeightGrams?: number
   sourceType: DataSourceType          // typically MANUFACTURER_PROVIDED or IMPORTED
-  verificationStatus: VerificationStatus  // typically UNVERIFIED
+  verificationStatus: VerificationStatus  // typically UNVERIFIED; if
+                                       // hasSupplier is false, this stays
+                                       // UNVERIFIED permanently — there is
+                                       // no supplier who can ever approve it
   claimedBySupplierId?: string        // set if a real Supplier later "claims" this
+                                       // (only ever applies when hasSupplier was true)
 }
 ```
 

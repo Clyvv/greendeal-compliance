@@ -19,17 +19,21 @@ import {
   addExternalSupplierProductComponentAction,
   addSupplierProductComponentAction,
 } from "@/lib/packaging/actions";
+import {
+  ManufacturerProvidedDataStep,
+  type ManufacturerProvidedDataValues,
+} from "./manufacturer-provided-data-step";
 import type { SupplierProduct } from "@/lib/types";
 
 // The three source options, per AGENTS.md §10a / original requirements
-// doc §13. "EXTERNAL_LIGHT" isn't a separate DataSourceType — see
-// lib/services/mockExternalSupplierService.ts's CreateExternalSupplierProductInput
-// comment for how it maps to sourceType: 'IMPORTED' vs the full
-// "EXTERNAL_FULL" form's 'MANUFACTURER_PROVIDED'.
+// doc §13. Stage 7.11 — EXTERNAL_SUPPLIER (hasSupplier: true) and
+// MANUFACTURER_DATA (hasSupplier: false) are genuinely distinct paths
+// now, not a full/light variant of the same form — see
+// lib/types/external-supplier-product.ts.
 type SourceChoice =
   | "SUPPLIER_PRODUCT"
-  | "EXTERNAL_FULL"
-  | "EXTERNAL_LIGHT"
+  | "EXTERNAL_SUPPLIER"
+  | "MANUFACTURER_DATA"
   | null;
 
 function getErrorMessage(error: unknown): string {
@@ -141,7 +145,7 @@ export function AddComponentFlow({
     });
   }
 
-  function handleSubmitExternal(sourceType: "MANUFACTURER_PROVIDED" | "IMPORTED") {
+  function handleSubmitExternalSupplier() {
     const trimmedRole = role.trim();
     if (!trimmedRole) return;
     if (!externalForm.supplierCompanyName.trim()) return;
@@ -152,7 +156,7 @@ export function AddComponentFlow({
         await addExternalSupplierProductComponentAction({
           packagingItemId,
           role: trimmedRole,
-          sourceType,
+          hasSupplier: true,
           supplierCompanyName: externalForm.supplierCompanyName,
           supplierContactName: externalForm.supplierContactName || undefined,
           supplierEmail: externalForm.supplierEmail || undefined,
@@ -170,6 +174,36 @@ export function AddComponentFlow({
         toast({
           title: "Component added",
           description: `${trimmedRole} now references ${externalForm.productName} — not yet a registered Greendeal supplier.`,
+          variant: "success",
+        });
+        router.push(`/manufacturer/packaging-items/${packagingItemId}`);
+      } catch (error) {
+        toast({
+          title: "Couldn't add component",
+          description: getErrorMessage(error),
+          variant: "destructive",
+        });
+      }
+    });
+  }
+
+  function handleSubmitManufacturerProvided(
+    values: ManufacturerProvidedDataValues
+  ) {
+    const trimmedRole = role.trim();
+    if (!trimmedRole) return;
+
+    startTransition(async () => {
+      try {
+        await addExternalSupplierProductComponentAction({
+          packagingItemId,
+          role: trimmedRole,
+          hasSupplier: false,
+          ...values,
+        });
+        toast({
+          title: "Component added",
+          description: `${trimmedRole} now references ${values.productName} — self-reported by your organization, no supplier associated.`,
           variant: "success",
         });
         router.push(`/manufacturer/packaging-items/${packagingItemId}`);
@@ -217,29 +251,25 @@ export function AddComponentFlow({
         />
       )}
 
-      {source === "EXTERNAL_FULL" && (
+      {source === "EXTERNAL_SUPPLIER" && (
         <ExternalSupplierFormStep
-          variant="FULL"
           role={role}
           onRoleChange={setRole}
           form={externalForm}
           onFieldChange={updateExternalField}
           isPending={isPending}
           onBack={handleBackToSource}
-          onSubmit={() => handleSubmitExternal("MANUFACTURER_PROVIDED")}
+          onSubmit={handleSubmitExternalSupplier}
         />
       )}
 
-      {source === "EXTERNAL_LIGHT" && (
-        <ExternalSupplierFormStep
-          variant="LIGHT"
+      {source === "MANUFACTURER_DATA" && (
+        <ManufacturerProvidedDataStep
           role={role}
           onRoleChange={setRole}
-          form={externalForm}
-          onFieldChange={updateExternalField}
           isPending={isPending}
           onBack={handleBackToSource}
-          onSubmit={() => handleSubmitExternal("IMPORTED")}
+          onSubmit={handleSubmitManufacturerProvided}
         />
       )}
     </div>
@@ -263,16 +293,16 @@ function SourceChoiceStep({
         "Search published products already maintained by a supplier on Greendeal. This is the normal path — the component references the supplier's real, versioned product data, and you can request specific fields from it afterward.",
     },
     {
-      id: "EXTERNAL_FULL",
+      id: "EXTERNAL_SUPPLIER",
       title: "Add External Supplier Product",
       description:
-        "The supplier isn't on Greendeal yet. Enter what you know about them and their product, then invite the supplier to claim and maintain it themselves.",
+        "A real supplier exists but isn't on Greendeal yet. Enter what you know about them and their product, then ask them to complete the rest via a secure response link — no account required for them.",
     },
     {
-      id: "EXTERNAL_LIGHT",
+      id: "MANUFACTURER_DATA",
       title: "Use Existing Manufacturer-Provided Data",
       description:
-        "You already have this compliance data from somewhere else (email, PDF, ERP, spreadsheet) and just need to record it. This data is never presented as supplier-authoritative.",
+        "There's no supplier for this data — you already have it from your own records (email, PDF, ERP, spreadsheet) and are the sole, permanent source. No supplier information is collected, and this data is never presented as supplier-authoritative.",
     },
   ];
 
@@ -412,8 +442,11 @@ function SupplierProductStep({
   );
 }
 
+// Stage 7.11 — always the "Add External Supplier Product" (hasSupplier:
+// true) form now; the "Use Existing Manufacturer-Provided Data" path
+// has its own dedicated, full component (ManufacturerProvidedDataStep)
+// instead of sharing this one as a lighter-weight variant.
 function ExternalSupplierFormStep({
-  variant,
   role,
   onRoleChange,
   form,
@@ -422,7 +455,6 @@ function ExternalSupplierFormStep({
   onBack,
   onSubmit,
 }: {
-  variant: "FULL" | "LIGHT";
   role: string;
   onRoleChange: (value: string) => void;
   form: ExternalFormState;
@@ -431,7 +463,6 @@ function ExternalSupplierFormStep({
   onBack: () => void;
   onSubmit: () => void;
 }) {
-  const isFull = variant === "FULL";
   const canSubmit =
     role.trim().length > 0 &&
     form.supplierCompanyName.trim().length > 0 &&
@@ -440,28 +471,15 @@ function ExternalSupplierFormStep({
   return (
     <Card>
       <CardHeader>
-        <CardTitle>
-          {isFull
-            ? "Add External Supplier Product"
-            : "Use Existing Manufacturer-Provided Data"}
-        </CardTitle>
+        <CardTitle>Add External Supplier Product</CardTitle>
       </CardHeader>
       <CardContent className="space-y-5">
-        {/* LIGHT variant ("Use Existing Manufacturer-Provided Data") is
-            a lighter-weight version of the FULL "Add External Supplier
-            Product" form, for data the manufacturer already has on
-            hand from another source. It will never be presented as
-            supplier-authoritative (AGENTS.md §10a) — it's recorded
-            with sourceType "IMPORTED" (see handleSubmitExternal above),
-            distinct from FULL's "MANUFACTURER_PROVIDED", which stands
-            in for a supplier the manufacturer intends to invite. */}
-
         <RoleField role={role} onRoleChange={onRoleChange} />
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <Label htmlFor="supplier-company-name">
-              {isFull ? "Supplier Company Name *" : "Source / Supplier Name *"}
+              Supplier Company Name *
             </Label>
             <Input
               id="supplier-company-name"
@@ -469,9 +487,7 @@ function ExternalSupplierFormStep({
               onChange={(event) =>
                 onFieldChange("supplierCompanyName", event.target.value)
               }
-              placeholder={
-                isFull ? "e.g. Acme Bottling Co." : "e.g. Acme Bottling Co., or “Internal ERP export”"
-              }
+              placeholder="e.g. Acme Bottling Co."
             />
           </div>
           <div>
@@ -484,59 +500,55 @@ function ExternalSupplierFormStep({
             />
           </div>
 
-          {isFull && (
-            <>
-              <div>
-                <Label htmlFor="supplier-contact-name">Contact Name</Label>
-                <Input
-                  id="supplier-contact-name"
-                  value={form.supplierContactName}
-                  onChange={(event) =>
-                    onFieldChange("supplierContactName", event.target.value)
-                  }
-                />
-              </div>
-              <div>
-                <Label htmlFor="supplier-email">Email</Label>
-                <Input
-                  id="supplier-email"
-                  type="email"
-                  value={form.supplierEmail}
-                  onChange={(event) =>
-                    onFieldChange("supplierEmail", event.target.value)
-                  }
-                />
-              </div>
-              <div>
-                <Label htmlFor="supplier-country">Country</Label>
-                <Input
-                  id="supplier-country"
-                  value={form.supplierCountry}
-                  onChange={(event) =>
-                    onFieldChange("supplierCountry", event.target.value)
-                  }
-                />
-              </div>
-              <div>
-                <Label htmlFor="supplier-sku">Supplier SKU</Label>
-                <Input
-                  id="supplier-sku"
-                  value={form.supplierSku}
-                  onChange={(event) =>
-                    onFieldChange("supplierSku", event.target.value)
-                  }
-                />
-              </div>
-              <div>
-                <Label htmlFor="gtin">GTIN</Label>
-                <Input
-                  id="gtin"
-                  value={form.gtin}
-                  onChange={(event) => onFieldChange("gtin", event.target.value)}
-                />
-              </div>
-            </>
-          )}
+          <div>
+            <Label htmlFor="supplier-contact-name">Contact Name</Label>
+            <Input
+              id="supplier-contact-name"
+              value={form.supplierContactName}
+              onChange={(event) =>
+                onFieldChange("supplierContactName", event.target.value)
+              }
+            />
+          </div>
+          <div>
+            <Label htmlFor="supplier-email">Email</Label>
+            <Input
+              id="supplier-email"
+              type="email"
+              value={form.supplierEmail}
+              onChange={(event) =>
+                onFieldChange("supplierEmail", event.target.value)
+              }
+            />
+          </div>
+          <div>
+            <Label htmlFor="supplier-country">Country</Label>
+            <Input
+              id="supplier-country"
+              value={form.supplierCountry}
+              onChange={(event) =>
+                onFieldChange("supplierCountry", event.target.value)
+              }
+            />
+          </div>
+          <div>
+            <Label htmlFor="supplier-sku">Supplier SKU</Label>
+            <Input
+              id="supplier-sku"
+              value={form.supplierSku}
+              onChange={(event) =>
+                onFieldChange("supplierSku", event.target.value)
+              }
+            />
+          </div>
+          <div>
+            <Label htmlFor="gtin">GTIN</Label>
+            <Input
+              id="gtin"
+              value={form.gtin}
+              onChange={(event) => onFieldChange("gtin", event.target.value)}
+            />
+          </div>
 
           <div>
             <Label htmlFor="known-material-family">Known Material Family</Label>
@@ -549,21 +561,19 @@ function ExternalSupplierFormStep({
               placeholder="e.g. Plastic"
             />
           </div>
-          {isFull && (
-            <div>
-              <Label htmlFor="known-material-composition">
-                Known Material Composition
-              </Label>
-              <Input
-                id="known-material-composition"
-                value={form.knownMaterialComposition}
-                onChange={(event) =>
-                  onFieldChange("knownMaterialComposition", event.target.value)
-                }
-                placeholder="e.g. PET"
-              />
-            </div>
-          )}
+          <div>
+            <Label htmlFor="known-material-composition">
+              Known Material Composition
+            </Label>
+            <Input
+              id="known-material-composition"
+              value={form.knownMaterialComposition}
+              onChange={(event) =>
+                onFieldChange("knownMaterialComposition", event.target.value)
+              }
+              placeholder="e.g. PET"
+            />
+          </div>
           <div>
             <Label htmlFor="known-weight">Known Weight (grams)</Label>
             <Input

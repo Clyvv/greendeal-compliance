@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StatusPill } from "@/components/ui/status-pill";
@@ -17,14 +18,22 @@ import type { ExternalSupplierProduct, PackagingComponent } from "@/lib/types";
  * NOT_REQUESTED/MISSING pill pair (what's actually stored — see
  * mockPackagingService.addPackagingComponent's comment) would
  * misleadingly imply a supplier exists and simply hasn't been asked
- * yet. This card replaces that with an explicit "No registered
- * supplier" state and a "Request Information from Supplier" affordance
- * (Stage 7.10 — see request-information-button.tsx) instead of a
- * "Request Data" button. Once the supplier completes that response
- * (responseStatus 'COMPLETED'), the banner below flips to a success
- * state and the ProvenanceBadge above automatically reflects the
- * upgraded sourceType/verificationStatus (buildExternalSupplierProvenance
- * always reads those straight off the entity).
+ * yet.
+ *
+ * Stage 7.11 — `hasSupplier` now genuinely branches this card into two
+ * different situations, not just two variants of the same one:
+ * - hasSupplier: true — "Add External Supplier Product" (unchanged
+ *   from Stage 7.10). A real supplier exists; shows the "Request
+ *   Information from Supplier" affordance (request-information-button.tsx),
+ *   which flips to a success banner once responseStatus is 'COMPLETED'
+ *   (the ProvenanceBadge above reflects that upgrade automatically —
+ *   buildExternalSupplierProvenance always reads sourceType/
+ *   verificationStatus straight off the entity).
+ * - hasSupplier: false — "Use Existing Manufacturer-Provided Data".
+ *   There is no supplier to request anything from, ever — the
+ *   "Request Information from Supplier" action is not merely disabled,
+ *   it's not rendered at all, and the copy below says so plainly
+ *   rather than implying a supplier relationship that doesn't exist.
  */
 export function ExternalPackagingComponentCard({
   component,
@@ -41,6 +50,11 @@ export function ExternalPackagingComponentCard({
         sourceType: "MANUFACTURER_PROVIDED",
         verificationStatus: "UNVERIFIED",
       });
+  // Defaults to true (the original, pre-Stage-7.11 behavior) only in
+  // the edge case where the record itself failed to resolve — once
+  // externalSupplierProduct is loaded, hasSupplier is always a real
+  // boolean.
+  const hasSupplier = externalSupplierProduct?.hasSupplier ?? true;
 
   return (
     <Card>
@@ -52,11 +66,17 @@ export function ExternalPackagingComponentCard({
               {externalSupplierProduct?.productName ?? "Unknown product"}
             </p>
             <p className="text-xs text-slate-500">
-              Claimed supplier:{" "}
-              {externalSupplierProduct?.supplierCompanyName ?? "Unknown"}
-              {externalSupplierProduct?.supplierCountry
-                ? ` · ${externalSupplierProduct.supplierCountry}`
-                : ""}
+              {hasSupplier ? (
+                <>
+                  Claimed supplier:{" "}
+                  {externalSupplierProduct?.supplierCompanyName ?? "Unknown"}
+                  {externalSupplierProduct?.supplierCountry
+                    ? ` · ${externalSupplierProduct.supplierCountry}`
+                    : ""}
+                </>
+              ) : (
+                "No supplier associated — self-reported by manufacturer"
+              )}
             </p>
             <div className="mt-1">
               <ProvenanceBadge provenance={provenance} />
@@ -81,19 +101,39 @@ export function ExternalPackagingComponentCard({
           <DetailField
             label="Supplier Registration"
             value={
-              // Deliberately not AUTHORIZATION_STATUS_TO_PILL's
-              // NOT_REQUESTED ("Not Authorized" 🔒) — that implies a
-              // real supplier org exists and simply hasn't been asked
-              // yet. There isn't one, so this says so directly.
-              <StatusPill
-                status="not-authorized"
-                label="No registered supplier"
-              />
+              hasSupplier ? (
+                // Deliberately not AUTHORIZATION_STATUS_TO_PILL's
+                // NOT_REQUESTED ("Not Authorized" 🔒) — that implies a
+                // real supplier org exists and simply hasn't been asked
+                // yet. There isn't one on Greendeal, so this says so
+                // directly.
+                <StatusPill
+                  status="not-authorized"
+                  label="No registered supplier"
+                />
+              ) : (
+                // "Not applicable" (○), not "not authorized" (🔒) — for
+                // a hasSupplier:false record there is no supplier
+                // concept here at all to be (un)authorized, so ○ is the
+                // accurate icon per AGENTS.md §4, not just the closest
+                // available one.
+                <StatusPill status="not-applicable" label="No supplier" />
+              )
             }
           />
         </dl>
 
-        {externalSupplierProduct?.responseStatus === "COMPLETED" ? (
+        {!hasSupplier ? (
+          <div className="rounded-md border border-slate-200 bg-slate-50 p-3">
+            <p className="text-sm text-slate-700">
+              No supplier associated — data self-reported by manufacturer.
+              This is the permanent state for this component, not a step
+              on the way to something else: there is no supplier to
+              invite or request more from, and this data will not become
+              supplier-verified.
+            </p>
+          </div>
+        ) : externalSupplierProduct?.responseStatus === "COMPLETED" ? (
           <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3">
             <p className="text-sm text-emerald-800">
               ✓ The supplier completed their response — this record now
@@ -140,6 +180,12 @@ export function ExternalPackagingComponentCard({
         )}
 
         <div className="flex flex-wrap items-center gap-2 border-t border-slate-200 pt-3">
+          <Link
+            href={`/manufacturer/packaging-items/${packagingItemId}/components/${component.id}`}
+            className="text-sm font-medium text-emerald-700 hover:underline"
+          >
+            View / Edit Details →
+          </Link>
           <RemoveComponentButton
             componentId={component.id}
             packagingItemId={packagingItemId}
