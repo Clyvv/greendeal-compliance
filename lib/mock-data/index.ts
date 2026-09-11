@@ -11,3 +11,4 @@ export * from "./packaging-components";
 export * from "./data-requests";
 export * from "./data-approvals";
 export * from "./assessments";
+export * from "./external-supplier-products";

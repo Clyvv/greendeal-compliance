@@ -10,12 +10,14 @@ import {
   getSupplierProduct,
 } from "@/lib/services/mockProductService";
 import { getOrganization } from "@/lib/services/mockOrganizationService";
+import { getExternalSupplierProduct } from "@/lib/services/mockExternalSupplierService";
 import {
   getAuthorizedData,
   getDataRequests,
 } from "@/lib/services/mockRequestService";
 import { getAssessmentHistory } from "@/lib/services/mockAssessmentService";
 import { CURRENT_MANUFACTURER_ORG_ID } from "@/lib/constants";
+import { Button } from "@/components/ui/button";
 import { PackagingComponentCard } from "@/components/packaging/packaging-component-card";
 import {
   PackagingReadinessPanel,
@@ -52,8 +54,24 @@ export default async function PackagingItemDetailsPage({
     "MANUFACTURER"
   );
 
+  // Stage 7.3 — a component references EITHER a real SupplierProduct
+  // OR an ExternalSupplierProduct (see lib/types/packaging.ts). Branch
+  // early per component rather than threading optional fields through
+  // one shared shape, so each branch only ever fetches/returns data
+  // that's actually meaningful for its kind.
   const resolvedComponents = await Promise.all(
     components.map(async (component) => {
+      if (component.externalSupplierProductId) {
+        const externalProduct = await getExternalSupplierProduct(
+          component.externalSupplierProductId
+        );
+        return {
+          kind: "EXTERNAL" as const,
+          component,
+          externalProduct,
+        };
+      }
+
       const supplierProduct = await getSupplierProduct(
         component.supplierProductId
       );
@@ -85,6 +103,7 @@ export default async function PackagingItemDetailsPage({
       });
 
       return {
+        kind: "NATIVE" as const,
         component,
         supplierProduct,
         supplierOrg,
@@ -95,7 +114,18 @@ export default async function PackagingItemDetailsPage({
     })
   );
 
-  const readinessRows: ReadinessRow[] = resolvedComponents.map(
+  const nativeComponents = resolvedComponents.filter(
+    (resolved) => resolved.kind === "NATIVE"
+  );
+  const externalComponentCount = resolvedComponents.length - nativeComponents.length;
+
+  // External components are deliberately excluded from the PPWR
+  // readiness rollup below — there's no supplier org in Greendeal yet
+  // to request/authorize anything from, so there's nothing genuine to
+  // compute a per-field AUTHORIZED/PENDING/DENIED/NOT_REQUESTED state
+  // against (see PackagingComponentCard's dispatch to
+  // ExternalPackagingComponentCard for how these render instead).
+  const readinessRows: ReadinessRow[] = nativeComponents.map(
     ({ component, supplierProduct, supplierOrg, dataRequestId, readiness }) => ({
       component,
       supplierProductName: supplierProduct?.name,
@@ -122,19 +152,35 @@ export default async function PackagingItemDetailsPage({
         ← Back to Packaging Items
       </Link>
 
-      <div>
-        <h1 className="text-xl font-semibold text-slate-900">{item.name}</h1>
-        <p className="mt-1 text-sm text-slate-500">
-          SKU {item.sku} · {item.market} · {item.packagingType}
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold text-slate-900">{item.name}</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            SKU {item.sku} · {item.market} · {item.packagingType}
+          </p>
+        </div>
+        <Link href={`/manufacturer/packaging-items/${item.id}/add-component`}>
+          <Button type="button">Add Component</Button>
+        </Link>
       </div>
 
-      {resolvedComponents.length > 0 && (
-        <PackagingReadinessPanel
-          packagingItemId={item.id}
-          rows={readinessRows}
-          summary={readinessSummary}
-        />
+      {readinessRows.length > 0 && (
+        <div className="space-y-2">
+          <PackagingReadinessPanel
+            packagingItemId={item.id}
+            rows={readinessRows}
+            summary={readinessSummary}
+          />
+          {externalComponentCount > 0 && (
+            <p className="text-xs text-slate-500">
+              {externalComponentCount} external supplier product
+              {externalComponentCount === 1 ? "" : "s"} below{" "}
+              {externalComponentCount === 1 ? "is" : "are"} not yet included
+              in this readiness check — there&rsquo;s no registered supplier
+              to request/authorize data from yet.
+            </p>
+          )}
+        </div>
       )}
 
       <div>
@@ -144,26 +190,32 @@ export default async function PackagingItemDetailsPage({
         {resolvedComponents.length === 0 ? (
           <EmptyState
             title="No components yet"
-            description="Components will appear here once added to this packaging item."
+            description="Add a component to get started — reference a published Greendeal supplier product, or record data from a supplier not yet on Greendeal."
+            action={
+              <Link href={`/manufacturer/packaging-items/${item.id}/add-component`}>
+                <Button type="button">Add Component</Button>
+              </Link>
+            }
           />
         ) : (
           <div className="space-y-4">
-            {resolvedComponents.map(
-              ({
-                component,
-                supplierProduct,
-                supplierOrg,
-                productVersion,
-                dataRequestId,
-              }) => (
+            {resolvedComponents.map((resolved) =>
+              resolved.kind === "EXTERNAL" ? (
                 <PackagingComponentCard
-                  key={component.id}
-                  component={component}
+                  key={resolved.component.id}
+                  component={resolved.component}
                   packagingItemId={item.id}
-                  dataRequestId={dataRequestId}
-                  supplierProductName={supplierProduct?.name}
-                  supplierName={supplierOrg?.name}
-                  versionLabel={productVersion?.versionLabel}
+                  externalSupplierProduct={resolved.externalProduct}
+                />
+              ) : (
+                <PackagingComponentCard
+                  key={resolved.component.id}
+                  component={resolved.component}
+                  packagingItemId={item.id}
+                  dataRequestId={resolved.dataRequestId}
+                  supplierProductName={resolved.supplierProduct?.name}
+                  supplierName={resolved.supplierOrg?.name}
+                  versionLabel={resolved.productVersion?.versionLabel}
                 />
               )
             )}

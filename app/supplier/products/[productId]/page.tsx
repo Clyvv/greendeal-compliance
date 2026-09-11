@@ -5,6 +5,7 @@ import {
   getProductVersions,
   getSupplierProduct,
 } from "@/lib/services/mockProductService";
+import { getOrganization } from "@/lib/services/mockOrganizationService";
 import { ProductDetailsView } from "@/components/products/product-details-view";
 
 // Products/versions created via the Create Product wizard must be
@@ -21,9 +22,10 @@ export default async function ProductDetailsPage({
   const product = await getSupplierProduct(productId);
   if (!product) notFound();
 
-  const [currentVersion, versions] = await Promise.all([
+  const [currentVersion, versions, supplierOrg] = await Promise.all([
     getProductVersion(product.currentVersionId),
     getProductVersions(product.id),
+    getOrganization(product.supplierId),
   ]);
 
   const evidenceItems = currentVersion
@@ -36,6 +38,7 @@ export default async function ProductDetailsPage({
       currentVersion={currentVersion}
       versions={versions}
       evidenceItems={evidenceItems}
+      supplierName={supplierOrg?.name}
     />
   );
 }

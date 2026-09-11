@@ -128,7 +128,92 @@ export async function updateComponentAuthorizationStatus(
   return component;
 }
 
+let componentSequence = packagingComponents.length + 1;
+
+function generateComponentId(role: string): string {
+  const slug = role
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
+  const id = `pkgc-${slug || "component"}-${componentSequence}`;
+  componentSequence += 1;
+  return id;
+}
+
+// Stage 7.3 — a component is added from exactly one of two sources,
+// never both, and never partially. Modeled as a real discriminated
+// union (rather than one loose object with optional fields for both
+// cases) so `addPackagingComponent` itself — and every caller building
+// this input — is forced by the type checker to supply exactly the
+// fields that make sense for the chosen source, with no way to
+// accidentally mix a supplierProductId into an EXTERNAL_SUPPLIER_PRODUCT
+// input or vice versa. See STAGE_7_REVIEW.md §6a, which flagged this as
+// the first genuinely new decision point in the whole component-
+// creation flow.
+export type AddPackagingComponentInput =
+  | {
+      source: "SUPPLIER_PRODUCT";
+      role: string;
+      supplierProductId: string;
+      productVersionId: string;
+    }
+  | {
+      source: "EXTERNAL_SUPPLIER_PRODUCT";
+      role: string;
+      externalSupplierProductId: string;
+    };
+
+// Maps to: POST /api/v1/packaging-items/{itemId}/components
+// Did not exist before Stage 7.3 (confirmed gap — STAGE_7_REVIEW.md
+// §5.2): createPackagingItem always produced componentIds: [] with no
+// follow-up. This is that follow-up, for both native and external
+// sources. A brand-new component always starts NOT_REQUESTED/MISSING —
+// even the EXTERNAL_SUPPLIER_PRODUCT case, since PackagingComponent's
+// authorizationStatus/dataAvailability fields aren't optional and there
+// isn't a more meaningful pair of values to store for "no supplier org
+// exists yet to request from" than the same defaults a fresh native
+// component gets. PackagingComponentCard (Stage 7.2/7.3) is what
+// actually renders an external component differently — see that
+// component's dispatch on externalSupplierProductId — this service
+// layer doesn't invent new enum values just to special-case display.
+export async function addPackagingComponent(
+  itemId: string,
+  input: AddPackagingComponentInput
+): Promise<PackagingComponent> {
+  const item = packagingItems.find((packagingItem) => packagingItem.id === itemId);
+  if (!item) {
+    throw new Error(`Unknown packaging item: ${itemId}`);
+  }
+  if (!input.role.trim()) {
+    throw new Error("Component role is required.");
+  }
+
+  const component: PackagingComponent =
+    input.source === "SUPPLIER_PRODUCT"
+      ? {
+          id: generateComponentId(input.role),
+          packagingItemId: itemId,
+          role: input.role,
+          supplierProductId: input.supplierProductId,
+          productVersionId: input.productVersionId,
+          authorizationStatus: "NOT_REQUESTED",
+          dataAvailability: "MISSING",
+        }
+      : {
+          id: generateComponentId(input.role),
+          packagingItemId: itemId,
+          role: input.role,
+          externalSupplierProductId: input.externalSupplierProductId,
+          authorizationStatus: "NOT_REQUESTED",
+          dataAvailability: "MISSING",
+        };
+
+  packagingComponents.push(component);
+  item.componentIds.push(component.id);
+  return component;
+}
+
 // Planned for a later stage (see API_CONTRACT.md → mockPackagingService):
-//   addPackagingComponent(itemId, input)
 //   replaceComponentProduct(componentId, newProductId)
 //   getPackagingReadiness(itemId)

@@ -193,6 +193,41 @@ Do not implement real authentication, sessions, or user accounts.
 
 ---
 
+## 10a. Post-Stage-7 extension — supply-chain adoption scenarios
+
+As of Stage 7.x, the product must support four scenarios, not just the
+native Greendeal-to-Greendeal flow:
+
+1. Both manufacturer and supplier use Greendeal (original flow, Stages
+   1–7).
+2. Manufacturer uses Greendeal; supplier does not (manufacturer creates
+   an **External Supplier Product**, sends a secure response link).
+3. Supplier uses Greendeal; the request originated outside Greendeal
+   (e.g. a plain email) — supplier points the requester to their
+   **Public Request Link**, requester submits a structured request
+   through it without needing a Greendeal account.
+4. Manufacturer already possesses supplier data from another source
+   (email, PDF, ERP, spreadsheet) and enters it directly — this data is
+   **never** presented as supplier-authoritative.
+
+**Core rule this introduces (never violate):** not all data is equally
+authoritative. Every significant data record must show a visible
+**source** (who/what it came from) and a **verification status** (how
+trustworthy it currently is). See DOMAIN.md's Data Provenance section
+for the exact enums.
+
+**Public request links never expose data directly.** The flow is
+always: link → requester submits a request → supplier reviews → supplier
+approves → only approved fields are shared. A public link is a request
+endpoint, never a data page.
+
+**Existing Stage 1–7 functionality must remain intact.** These are
+additive scenarios layered onto the same domain model, not a rebuild.
+Do not duplicate pages or build a parallel workflow alongside the
+existing one — integrate into what's there.
+
+---
+
 ## 10. Reference docs
 
 - `DOMAIN.md` — full entity/field-level domain model + sample data
@@ -200,3 +235,4 @@ Do not implement real authentication, sessions, or user accounts.
   updated as each stage is built
 - `SPEC.md` — original full product spec (source of truth these files
   were distilled from)
+  

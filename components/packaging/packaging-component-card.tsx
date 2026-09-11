@@ -4,15 +4,18 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { StatusPill } from "@/components/ui/status-pill";
+import { ProvenanceBadge } from "@/components/provenance/provenance-badge";
 import {
   AUTHORIZATION_STATUS_LABELS,
   AUTHORIZATION_STATUS_TO_PILL,
   DATA_AVAILABILITY_LABELS,
   DATA_AVAILABILITY_TO_PILL,
 } from "@/lib/packaging-utils";
-import type { PackagingComponent } from "@/lib/types";
+import { buildSupplierMaintainedProvenance } from "@/lib/provenance";
+import { ExternalPackagingComponentCard } from "./external-packaging-component-card";
+import type { ExternalSupplierProduct, PackagingComponent } from "@/lib/types";
 
-function DetailField({ label, value }: { label: string; value: ReactNode }) {
+export function DetailField({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div>
       <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
@@ -37,6 +40,7 @@ export function PackagingComponentCard({
   supplierProductName,
   supplierName,
   versionLabel,
+  externalSupplierProduct,
 }: {
   component: PackagingComponent;
   packagingItemId: string;
@@ -48,7 +52,22 @@ export function PackagingComponentCard({
   supplierProductName?: string;
   supplierName?: string;
   versionLabel?: string;
+  /** Set only when component.externalSupplierProductId is set (Stage
+   * 7.3) — the resolved ExternalSupplierProduct record. Dispatches to
+   * an entirely different card body below; everything else in this
+   * function is the unchanged native-component rendering from Stage
+   * 7.2, per AGENTS.md's "preserve prior functionality" rule. */
+  externalSupplierProduct?: ExternalSupplierProduct;
 }) {
+  if (component.externalSupplierProductId) {
+    return (
+      <ExternalPackagingComponentCard
+        component={component}
+        externalSupplierProduct={externalSupplierProduct}
+      />
+    );
+  }
+
   const isAuthorized = component.authorizationStatus === "AUTHORIZED";
   const canRequestData = component.authorizationStatus === "NOT_REQUESTED";
 
@@ -73,6 +92,19 @@ export function PackagingComponentCard({
               {versionLabel ? ` v${versionLabel}` : ""},{" "}
               {supplierName ?? "Unknown supplier"}
             </p>
+            {/* This reference (which product/version this component
+                sources from) is always visible regardless of
+                authorizationStatus, per AGENTS.md §6 — it describes the
+                supplier's own published product, not the gated
+                compliance field values. */}
+            <div className="mt-1">
+              <ProvenanceBadge
+                provenance={buildSupplierMaintainedProvenance(
+                  supplierName ?? "Unknown supplier",
+                  { productVersionId: component.productVersionId }
+                )}
+              />
+            </div>
           </div>
           {dataRequestId ? (
             <Link

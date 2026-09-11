@@ -12,12 +12,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
+import { ProvenanceBadge } from "@/components/provenance/provenance-badge";
 import { useToast } from "@/components/providers/toast-provider";
 import {
   approveDataRequestAction,
   rejectDataRequestAction,
 } from "@/lib/requests/actions";
 import { formatDate } from "@/lib/utils";
+import { buildSupplierApprovedProvenance } from "@/lib/provenance";
 import type { DataRequest, DataRequestStatus } from "@/lib/types";
 import type { GroupedRequestedAttributes } from "@/lib/requests/fields";
 
@@ -32,6 +34,10 @@ export interface DataRequestApprovalFlowProps {
   requestingOrgName: string;
   supplierProductName: string;
   packagingItemName: string;
+  /** The current org's own name — used only for the post-approval
+   * provenance badge (DOMAIN.md §8a): this supplier is the source of
+   * the data it just approved sharing. */
+  supplierOrgName: string;
   groupedRequested: GroupedRequestedAttributes[];
   /** Only set when request.status === "APPROVED" (see the page loader). */
   approvedAttributes?: string[];
@@ -42,6 +48,7 @@ export function DataRequestApprovalFlow({
   requestingOrgName,
   supplierProductName,
   packagingItemName,
+  supplierOrgName,
   groupedRequested,
   approvedAttributes,
 }: DataRequestApprovalFlowProps) {
@@ -190,6 +197,11 @@ export function DataRequestApprovalFlow({
             organization. {requestingOrgName} receives authorized access to
             the approved fields only — not a copy or transfer of ownership.
           </p>
+          <div className="mt-2">
+            <ProvenanceBadge
+              provenance={buildSupplierApprovedProvenance(supplierOrgName)}
+            />
+          </div>
         </div>
       )}
 

@@ -33,9 +33,10 @@ export default async function SupplierDataRequestDetailPage({
   // to another supplier, even via a guessed URL.
   if (request.supplierOrgId !== CURRENT_SUPPLIER_ORG_ID) notFound();
 
-  const [requestingOrg, supplierProduct, packagingItem, components] =
+  const [requestingOrg, supplierOrg, supplierProduct, packagingItem, components] =
     await Promise.all([
       getOrganization(request.requestingOrgId),
+      getOrganization(request.supplierOrgId),
       getSupplierProduct(request.supplierProductId),
       getPackagingItem(request.packagingItemId),
       getPackagingComponentsByProduct(
@@ -64,6 +65,7 @@ export default async function SupplierDataRequestDetailPage({
       requestingOrgName={requestingOrg?.name ?? "Unknown organization"}
       supplierProductName={supplierProduct?.name ?? "Unknown product"}
       packagingItemName={packagingItem?.name ?? "Unknown packaging item"}
+      supplierOrgName={supplierOrg?.name ?? "Unknown supplier"}
       groupedRequested={groupedRequested}
       approvedAttributes={approvedAttributes}
     />

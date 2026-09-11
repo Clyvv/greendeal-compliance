@@ -81,6 +81,10 @@ export async function createDataRequest(
     purpose: input.purpose,
     requestDate: today(),
     status: "PENDING",
+    // Every request created through this flow is the native
+    // Greendeal-to-Greendeal scenario (AGENTS.md §10a scenario 1) — the
+    // public-request-link/external origins arrive in a later stage.
+    origin: "GREENDEAL",
   };
   dataRequests.push(request);
   return request;
@@ -156,7 +160,10 @@ export async function rejectDataRequest(
 
 export interface AuthorizedData {
   packagingComponentId: string;
-  supplierProductId: string;
+  // Optional as of Stage 7.3 — undefined for a PackagingComponent
+  // backed by an ExternalSupplierProduct instead of a real
+  // SupplierProduct (no data request is possible against it yet).
+  supplierProductId?: string;
   /** Only ever the fields explicitly approved for this component —
    * across every APPROVED DataRequest raised against it. Anything
    * requested but not (yet) approved is deliberately absent here; the

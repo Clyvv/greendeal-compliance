@@ -18,10 +18,27 @@ export async function getSupplierProducts(
   return supplierProducts.filter((product) => product.supplierId === supplierId);
 }
 
+// Maps to: GET /api/v1/products?status=PUBLISHED
+// Cross-supplier lookup (Stage 7.3) for the manufacturer-side "Find
+// Greendeal Supplier Product" step of the Add Component flow —
+// getSupplierProducts above is scoped to one supplier's own product
+// list (used on supplier-facing screens); this is the
+// manufacturer-facing equivalent, filtered to PUBLISHED only. A
+// manufacturer should never be able to select a supplier's unpublished
+// DRAFT product it can't legitimately see compliance data for yet.
+export async function getPublishedSupplierProducts(): Promise<SupplierProduct[]> {
+  return supplierProducts.filter((product) => product.status === "PUBLISHED");
+}
+
 // Maps to: GET /api/v1/products/{productId}
+// Accepts `undefined` (Stage 7.3) so callers resolving a
+// PackagingComponent's optional supplierProductId (unset for
+// ExternalSupplierProduct-backed components) don't need a ternary at
+// every call site — always returns undefined rather than throwing.
 export async function getSupplierProduct(
-  productId: string
+  productId: string | undefined
 ): Promise<SupplierProduct | undefined> {
+  if (!productId) return undefined;
   return supplierProducts.find((product) => product.id === productId);
 }
 
@@ -33,16 +50,21 @@ export async function getProductVersions(
 }
 
 // Maps to: GET /api/v1/product-versions/{versionId}
+// Accepts `undefined` — see getSupplierProduct's comment above; same
+// reason (PackagingComponent.productVersionId is optional as of Stage 7.3).
 export async function getProductVersion(
-  versionId: string
+  versionId: string | undefined
 ): Promise<ProductVersion | undefined> {
+  if (!versionId) return undefined;
   return productVersions.find((version) => version.id === versionId);
 }
 
 // Maps to: GET /api/v1/product-versions/{versionId}/evidence
+// Accepts `undefined` — see getSupplierProduct's comment above.
 export async function getProductEvidence(
-  productVersionId: string
+  productVersionId: string | undefined
 ): Promise<Evidence[]> {
+  if (!productVersionId) return [];
   return evidence.filter((item) => item.productVersionId === productVersionId);
 }
 

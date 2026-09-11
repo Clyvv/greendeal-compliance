@@ -334,6 +334,117 @@ Calculated recycled content: 32.4%
 Version 2.0 scenario (Stage 10): PET Bottle recycled content 35% → 40%
 recalculates to ~36.8% overall.
 
+## 8a. Post-Stage-7 extension — new domain concepts
+
+### New entities
+
+```
+ExternalSupplierProduct   — manufacturer-created stand-in for a supplier
+                             product not yet registered in Greendeal
+DataProvenance            — attached to any significant data value,
+                             tracks where it came from and how trustworthy
+                             it is
+RequestItem /
+  RequestedAttribute      — a single field-level line item within a
+                             DataRequest (formalizes what was previously
+                             just a string array on DataRequest)
+RequestResponse           — a supplier's structured response to a
+                             request (supersedes ad hoc "approval" for
+                             the external/public-link scenarios, though
+                             the existing DataApproval flow from Stage 5
+                             still applies for the native scenario)
+```
+
+### DataRequest — new fields
+
+`DataRequest` (DOMAIN.md §3) gains an `origin` field:
+
+```ts
+type RequestOrigin = 'GREENDEAL' | 'PUBLIC_REQUEST_LINK' | 'EXTERNAL'
+```
+
+- `GREENDEAL` — the original Stage 4 flow (manufacturer requests from
+  within the app, both parties are Greendeal users)
+- `PUBLIC_REQUEST_LINK` — submitted via a supplier's public request page
+  by an unauthenticated external requester
+- `EXTERNAL` — reserved for future use (e.g. email-parsed requests);
+  not implemented in this prototype, but the enum value should exist
+
+### ExternalSupplierProduct
+
+```ts
+type DataSourceType =
+  | 'SUPPLIER_MAINTAINED' | 'SUPPLIER_APPROVED'
+  | 'MANUFACTURER_PROVIDED' | 'IMPORTED' | 'EXTERNAL_REQUEST_RESPONSE'
+
+type VerificationStatus =
+  | 'VERIFIED' | 'SUPPLIER_APPROVED' | 'UNVERIFIED' | 'EXPIRED'
+
+type ExternalSupplierProduct = {
+  id: string
+  createdByManufacturerId: string
+  supplierCompanyName: string
+  supplierContactName?: string
+  supplierEmail?: string
+  supplierCountry?: string
+  productName: string
+  supplierSku?: string
+  gtin?: string
+  knownMaterialFamily?: string
+  knownMaterialComposition?: string
+  knownWeightGrams?: number
+  sourceType: DataSourceType          // typically MANUFACTURER_PROVIDED or IMPORTED
+  verificationStatus: VerificationStatus  // typically UNVERIFIED
+  claimedBySupplierId?: string        // set if a real Supplier later "claims" this
+}
+```
+
+### DataProvenance
+
+Attach this to any significant data value the manufacturer sees
+(component fields, calculation inputs, assessment inputs):
+
+```ts
+type DataProvenance = {
+  sourceType: DataSourceType
+  sourceName: string             // e.g. "PET Solutions GmbH" or "Manufacturer Provided"
+  verificationStatus: VerificationStatus
+  productVersionId?: string      // if traceable to a real Product Version
+  evidenceIds?: string[]
+  validUntil?: string            // ISO date, if applicable
+}
+```
+
+### Public Request Link (conceptual — no dedicated persisted entity
+needed beyond a slug on the Supplier/Product)
+
+```
+/request/{supplierSlug}                 — supplier-level public request page
+/request/{supplierSlug}/{productId}     — product-specific public request page
+```
+
+A submission through this page creates a `DataRequest` with
+`origin: 'PUBLIC_REQUEST_LINK'` and a `requester` object (company name,
+contact name, email, country, optional reference number) instead of a
+`requestingOrgId` referencing a real Greendeal Organization, since the
+requester may not be a registered org.
+
+### RequestResponse (for external/public-link scenarios)
+
+```ts
+type RequestResponse = {
+  requestId: string
+  suppliedAttributes: Record<string, unknown>  // field key -> value
+  evidenceIds: string[]
+  approvedAttributes: string[]   // subset actually approved to share
+  status: 'DRAFT' | 'SUBMITTED'
+  submittedBy?: string
+  submittedAt?: string
+}
+```
+
+---
+
 ## 8. Assessment ID format
 
 `PPWR-<year>-<6-digit sequence>` — e.g. `PPWR-2026-000182`.

@@ -19,11 +19,13 @@ export function ProductDetailsView({
   currentVersion,
   versions,
   evidenceItems,
+  supplierName,
 }: {
   product: SupplierProduct;
   currentVersion: ProductVersion | undefined;
   versions: ProductVersion[];
   evidenceItems: Evidence[];
+  supplierName?: string;
 }) {
   return (
     <div className="space-y-6">
@@ -70,33 +72,63 @@ export function ProductDetailsView({
           {
             id: "identification",
             label: "Identification",
-            content: <IdentificationSection product={product} />,
+            content: (
+              <IdentificationSection
+                product={product}
+                supplierName={supplierName}
+              />
+            ),
           },
           {
             id: "physical",
             label: "Physical Properties",
-            content: <PhysicalSection version={currentVersion} />,
+            content: (
+              <PhysicalSection
+                version={currentVersion}
+                supplierName={supplierName}
+              />
+            ),
           },
           {
             id: "circularity",
             label: "Circularity & PPWR",
-            content: <CircularitySection version={currentVersion} />,
+            content: (
+              <CircularitySection
+                version={currentVersion}
+                supplierName={supplierName}
+              />
+            ),
           },
           {
             id: "chemical-safety",
             label: "Chemical Safety",
-            content: <ChemicalSafetySection version={currentVersion} />,
+            content: (
+              <ChemicalSafetySection
+                version={currentVersion}
+                supplierName={supplierName}
+              />
+            ),
           },
           {
             id: "specialized-domain",
             label: "Specialized Domain",
-            content: <SpecializedDomainSection version={currentVersion} />,
+            content: (
+              <SpecializedDomainSection
+                version={currentVersion}
+                supplierName={supplierName}
+              />
+            ),
           },
           {
             id: "evidence",
             label: "Evidence",
             badge: evidenceItems.length,
-            content: <EvidenceSection evidenceItems={evidenceItems} />,
+            content: (
+              <EvidenceSection
+                evidenceItems={evidenceItems}
+                supplierName={supplierName}
+              />
+            ),
           },
           {
             id: "version-history",

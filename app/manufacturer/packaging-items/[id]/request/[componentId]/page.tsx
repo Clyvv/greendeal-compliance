@@ -33,6 +33,16 @@ export default async function RequestDataPage({
   const component = await getPackagingComponent(componentId);
   if (!component || component.packagingItemId !== item.id) notFound();
 
+  // Stage 7.3 — a component backed by an ExternalSupplierProduct has
+  // no real supplier org in Greendeal to request data from yet (see
+  // ExternalPackagingComponentCard, which never links here). This
+  // route otherwise only checks authorizationStatus below, and a
+  // freshly-added external component is also NOT_REQUESTED — so this
+  // guard has to come first, not fall through to that check.
+  if (component.externalSupplierProductId) {
+    redirect(`/manufacturer/packaging-items/${item.id}`);
+  }
+
   // Data can only be requested once per component in this stage —
   // Stage 5 (approval) and beyond decide what happens next for
   // PENDING/AUTHORIZED/REJECTED components. Revisiting this route
@@ -40,6 +50,14 @@ export default async function RequestDataPage({
   // details page instead of letting a second request be created.
   if (component.authorizationStatus !== "NOT_REQUESTED") {
     redirect(`/manufacturer/packaging-items/${item.id}`);
+  }
+
+  // Guards TypeScript's control-flow narrowing too — supplierProductId/
+  // productVersionId are optional on PackagingComponent as of Stage
+  // 7.3 (see lib/types/packaging.ts), but a non-external component
+  // (the only kind reaching this point) always has both set.
+  if (!component.supplierProductId || !component.productVersionId) {
+    notFound();
   }
 
   const supplierProduct = await getSupplierProduct(component.supplierProductId);

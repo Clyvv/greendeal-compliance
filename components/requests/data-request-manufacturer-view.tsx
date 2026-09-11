@@ -7,11 +7,13 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StatusPill } from "@/components/ui/status-pill";
+import { ProvenanceBadge } from "@/components/provenance/provenance-badge";
 import { formatDate } from "@/lib/utils";
 import {
   DATA_REQUEST_STATUS_LABELS,
   DATA_REQUEST_STATUS_TO_PILL,
 } from "@/lib/requests/status";
+import { buildSupplierApprovedProvenance } from "@/lib/provenance";
 import type { DataRequest } from "@/lib/types";
 import type { GroupedRequestedAttributes } from "@/lib/requests/fields";
 
@@ -137,6 +139,15 @@ export function DataRequestManufacturerView({
               unavailable.
             </p>
           )}
+          {/* DOMAIN.md §8a — these approved fields arrived via an
+              approved Data Request, distinct from the supplier's
+              always-visible product reference chain (see
+              PackagingComponentCard). */}
+          <div className="mt-2">
+            <ProvenanceBadge
+              provenance={buildSupplierApprovedProvenance(supplierOrgName)}
+            />
+          </div>
         </div>
       )}
 

@@ -11,12 +11,15 @@ import {
   getEffectiveEvidenceStatus,
 } from "@/lib/evidence-utils";
 import { DetailField } from "./detail-field";
+import { SectionProvenance } from "./section-provenance";
 import type { Evidence } from "@/lib/types";
 
 export function EvidenceSection({
   evidenceItems,
+  supplierName,
 }: {
   evidenceItems: Evidence[];
+  supplierName?: string;
 }) {
   if (evidenceItems.length === 0) {
     return (
@@ -29,6 +32,7 @@ export function EvidenceSection({
 
   return (
     <div className="space-y-3">
+      <SectionProvenance supplierName={supplierName} />
       {evidenceItems.map((item) => {
         // Computed, not trusted blindly — a stored "VALID" that has
         // actually passed its expiration date still shows as Expired.

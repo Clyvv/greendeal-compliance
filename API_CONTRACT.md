@@ -24,13 +24,6 @@ Status column: 🟡 mock only (current) · 🟢 contract finalized · 🔵 built
 
 ---
 
-## mockOrganizationService
-
-| Function | Method + Path | Status |
-|---|---|---|
-| `getOrganizations()` | `GET /api/v1/organizations` | 🟡 |
-| `getOrganization(orgId)` | `GET /api/v1/organizations/{orgId}` | 🟡 |
-
 ## mockProductService
 
 | Function | Method + Path | Status |
@@ -46,18 +39,6 @@ Status column: 🟡 mock only (current) · 🟢 contract finalized · 🔵 built
 | `getProductEvidence(productVersionId)` | `GET /api/v1/product-versions/{versionId}/evidence` | 🟡 |
 | `addEvidence(productVersionId, input)` | `POST /api/v1/product-versions/{versionId}/evidence` | 🟡 |
 
-Note: the Create Product wizard (Stage 1b) submits identification,
-physical/circularity/chemical-safety/specialized-domain data, and
-evidence all in one user action, so the mock's `createSupplierProduct`
-bundles what this table shows as three separate calls
-(createSupplierProduct + createProductVersion + addEvidence) into one —
-it creates the product, its v1.0 ProductVersion, and any Evidence
-records together, always as DRAFT. `publishProduct` is a separate, pure
-status transition (DRAFT → PUBLISHED) and does not create a new
-version. A real backend would likely keep these as distinct calls (and
-`updateProductDraft`/`createProductVersion`/`addEvidence` remain
-unimplemented in the mock for now — see Stage 2+).
-
 ## mockPackagingService
 
 | Function | Method + Path | Status |
@@ -66,36 +47,21 @@ unimplemented in the mock for now — see Stage 2+).
 | `getPackagingItem(itemId)` | `GET /api/v1/packaging-items/{itemId}` | 🟡 |
 | `createPackagingItem(manufacturerId, input)` | `POST /api/v1/manufacturers/{manufacturerId}/packaging-items` | 🟡 |
 | `getPackagingComponents(itemId)` | `GET /api/v1/packaging-items/{itemId}/components` | 🟡 |
-| `getPackagingComponent(componentId)` | `GET /api/v1/packaging-components/{componentId}` | 🟡 |
-| `getPackagingComponentsByProduct(itemId, supplierProductId)` | `GET /api/v1/packaging-items/{itemId}/components?supplierProductId=` | 🟡 |
 | `addPackagingComponent(itemId, input)` | `POST /api/v1/packaging-items/{itemId}/components` | 🟡 |
 | `replaceComponentProduct(componentId, newProductId)` | `PATCH /api/v1/packaging-components/{componentId}` | 🟡 |
-| `updateComponentAuthorizationStatus(componentId, status)` | `PATCH /api/v1/packaging-components/{componentId}` | 🟡 |
 | `getPackagingReadiness(itemId)` | `GET /api/v1/packaging-items/{itemId}/readiness` | 🟡 |
 
-Note: `createPackagingItem` (Stage 3) creates an item with zero
-components — `addPackagingComponent` remains unimplemented until
-component selection exists (a later stage). Per AGENTS.md §7, nothing
-in this service (or the manufacturer UI built on it) ever returns or
-renders a referenced Supplier Product's actual compliance fields —
-only reference-level info (product name, supplier name, version
-label). `getAuthorizedData` (mockRequestService, below) is what
-exposes real field data, and only once a Data Request is approved.
-
-`updateComponentAuthorizationStatus` (Stage 4) shares the same PATCH
-endpoint as the still-unimplemented `replaceComponentProduct` — both
-are partial updates to a PackagingComponent, just different fields of
-the body. It's called right after `createDataRequest` succeeds (see
-mockRequestService below) to flip the requested component to PENDING;
-a real backend would likely do this itself as a side effect of
-creating the DataRequest rather than requiring a second client call.
-
-`getPackagingComponentsByProduct` (Stage 5) exists so the
-approve/reject Server Actions can resolve a DataRequest back to the
-component(s) it concerns and flip `authorizationStatus` to
-AUTHORIZED/REJECTED — same pattern as `updateComponentAuthorizationStatus`
-above, just looked up by (itemId, supplierProductId) instead of a
-componentId the caller already has.
+Note (Stage 7.3): `addPackagingComponent`'s `input` is a discriminated
+union on a `source` field — `{ source: 'SUPPLIER_PRODUCT', role,
+supplierProductId, productVersionId }` or `{ source:
+'EXTERNAL_SUPPLIER_PRODUCT', role, externalSupplierProductId }` — never
+a single object with optional fields for both. The real REST body would
+likely mirror this as a `source` discriminator field. `PackagingComponent`
+itself gained optional `supplierProductId`/`productVersionId`/
+`externalSupplierProductId` fields to store either outcome (see
+DOMAIN.md §3) — exactly one of (the first two) or the third is ever set,
+enforced by this function, not by the stored shape. `replaceComponentProduct`
+remains unimplemented.
 
 ## mockRequestService
 
@@ -107,15 +73,6 @@ componentId the caller already has.
 | `approveDataRequest(requestId, approvedAttributes)` | `POST /api/v1/data-requests/{requestId}/approve` | 🟡 |
 | `rejectDataRequest(requestId, reason?)` | `POST /api/v1/data-requests/{requestId}/reject` | 🟡 |
 | `getAuthorizedData(packagingComponentId)` | `GET /api/v1/packaging-components/{componentId}/authorized-data` | 🟡 |
-
-`getDataRequests`'s `role` param is `'MANUFACTURER' | 'SUPPLIER'`
-(mirrors `Organization['type']`) — the Supplier Data Requests inbox
-(Stage 5) calls it with `role: 'SUPPLIER'`, and the Manufacturer Data
-Requests list (Stage 5 corrective addition) calls it with
-`role: 'MANUFACTURER'`. Both filter correctly today (`MANUFACTURER` →
-`requestingOrgId === orgId`, `SUPPLIER` → `supplierOrgId === orgId`);
-this table previously only had a supplier-side consumer to verify
-against.
 
 ## mockAssessmentService
 
@@ -136,19 +93,6 @@ assessment id in `PROCESSING` status, with the client polling
 `AssessmentStatus.PROCESSING` state in the UI now specifically so this
 swap doesn't require new UI states later.
 
-`runAssessment`/`getAssessment`/`getAssessmentHistory` are implemented
-(Stage 7). Per the note above, `runAssessment` genuinely awaits a brief
-delay while the record sits at `PROCESSING` before flipping to
-`COMPLETE`/`REQUIRES_REVIEW` — not an instant flip — so a later swap to
-a real job queue only changes *how long*/*where* that wait happens, not
-the states a client needs to handle. Findings are computed by
-`lib/assessment-findings.ts` from real authorized data (via
-`getAuthorizedData`, `getProductEvidence`, `getProductVersion`, and
-Stage 6's `lib/readiness.ts`) — explicitly a simplified, illustrative
-heuristic (see that file's top comment), not a real PPWR rules engine.
-`getCalculation`/`getImpactAnalysis`/`recalculateAssessment` remain
-unimplemented — see Stage 8+.
-
 ## mockDocumentService
 
 | Function | Method + Path | Status |
@@ -156,6 +100,74 @@ unimplemented — see Stage 8+.
 | `generateDocument(assessmentId)` | `POST /api/v1/assessments/{assessmentId}/documents` | 🟡 |
 | `getDocument(documentId)` | `GET /api/v1/documents/{documentId}` | 🟡 |
 | `downloadDocument(documentId)` | `GET /api/v1/documents/{documentId}/download` (binary) | 🟡 |
+
+## mockOrganizationService
+
+Small lookup layer used throughout the app to resolve an org id (e.g.
+`SupplierProduct.supplierId`, `DataRequest.requestingOrgId`) into a
+display name wherever supplier/manufacturer org info is shown — most
+notably the provenance chain required by AGENTS.md §6 ("Source: PET
+Bottle 500ml v1.0, PET Solutions GmbH") and, as of Stage 7.2, the
+`ProvenanceBadge` source name. Present in code since early stages but
+previously undocumented here.
+
+| Function | Method + Path | Status |
+|---|---|---|
+| `getOrganizations()` | `GET /api/v1/organizations` | 🟡 |
+| `getOrganization(orgId)` | `GET /api/v1/organizations/{orgId}` | 🟡 |
+
+---
+
+## Post-Stage-7 extension — new services
+
+### mockExternalSupplierService
+
+| Function | Method + Path | Status |
+|---|---|---|
+| `createExternalSupplierProduct(manufacturerId, input)` | `POST /api/v1/manufacturers/{id}/external-supplier-products` | 🟡 |
+| `getExternalSupplierProduct(id)` | `GET /api/v1/external-supplier-products/{id}` | 🟡 |
+| `inviteSupplier(externalProductId, email)` | `POST /api/v1/external-supplier-products/{id}/invite` (simulated only — no real email) | 🟡 |
+
+Implemented in Stage 7.3, alongside the Add Component flow's three
+source options (`components/packaging/add-component-flow.tsx`).
+`createExternalSupplierProduct`'s `input.sourceType` is decided by the
+caller, not this service — "Add External Supplier Product" (the full
+form, captures supplier contact details so a later "Invite Supplier"
+is meaningful) always passes `MANUFACTURER_PROVIDED`; "Use Existing
+Manufacturer-Provided Data" (a lighter form — just a source name +
+product name, no contact details collected) always passes `IMPORTED`.
+Both start `verificationStatus: 'UNVERIFIED'`; nothing in this stage
+upgrades that. `inviteSupplier` is a pure confirmation stub — it
+persists nothing on the record and does not build the claim/onboarding
+flow a real invite would eventually trigger (explicitly out of scope
+for this stage).
+
+### mockPublicRequestService (no auth — public-facing)
+
+| Function | Method + Path | Status |
+|---|---|---|
+| `getSupplierPublicProfile(supplierSlug)` | `GET /api/v1/public/request/{supplierSlug}` | 🟡 |
+| `getSupplierProductPublic(supplierSlug, productId)` | `GET /api/v1/public/request/{supplierSlug}/{productId}` | 🟡 |
+| `submitPublicDataRequest(input)` | `POST /api/v1/public/request/{supplierSlug}/submit` — creates a DataRequest with origin PUBLIC_REQUEST_LINK | 🟡 |
+
+**Real-world note:** in production this endpoint needs rate limiting,
+spam/bot protection (captcha), and probably email verification of the
+requester before the supplier sees it as legitimate — out of scope for
+the prototype but worth flagging to the backend team now.
+
+### mockProvenanceService
+
+| Function | Method + Path | Status |
+|---|---|---|
+| `getProvenance(entityType, entityId, fieldKey)` | `GET /api/v1/provenance?entityType=&entityId=&field=` | 🟡 |
+
+### mockRequestService — extensions
+
+| Function | Method + Path | Status |
+|---|---|---|
+| `getRequestCoverage(requestId)` — compares requested fields against what the supplier already has on file | `GET /api/v1/data-requests/{id}/coverage` | 🟡 |
+| `submitRequestResponse(requestId, response)` | `POST /api/v1/data-requests/{id}/response` | 🟡 |
+| `claimExternalSupplierProduct(externalProductId, realSupplierId)` | `POST /api/v1/external-supplier-products/{id}/claim` | 🟡 |
 
 ---
 
@@ -172,3 +184,4 @@ unimplemented — see Stage 8+.
 - [ ] Multi-tenant scoping: will `organizationId` be derivable entirely
       from auth token, or do cross-org endpoints (e.g. manufacturer
       viewing authorized supplier data) need explicit org params either way?
+      
