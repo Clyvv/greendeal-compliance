@@ -7,11 +7,18 @@ import {
   getProductVersion,
 } from "@/lib/services/mockProductService";
 import { getAuthorizedData, getDataRequests } from "@/lib/services/mockRequestService";
-import { computeComponentReadiness, computeExternalComponentReadiness } from "@/lib/readiness";
+import { getExternalSupplierProduct } from "@/lib/services/mockExternalSupplierService";
+import {
+  computeComponentReadiness,
+  computeExternalComponentReadiness,
+  getExternalSupplierProvidedFields,
+  EVIDENCE_REQUIREMENT_LABEL,
+} from "@/lib/readiness";
 import {
   computeAssessmentFindings,
   type ComponentAssessmentInput,
 } from "@/lib/assessment-findings";
+import type { Evidence } from "@/lib/types";
 
 function nowIso(): string {
   return MOCK_TODAY.toISOString();
@@ -86,22 +93,82 @@ export async function runAssessment(
 
   // Stage 7.8 — a component references EITHER a real SupplierProduct OR
   // an ExternalSupplierProduct (Stage 7.3); branch the same way
-  // app/(app)/manufacturer/packaging-items/[id]/page.tsx already does,
-  // so an external component's total absence of PPWR-required fields
-  // (see computeExternalComponentReadiness) is represented honestly
-  // (UNVERIFIED) rather than silently computed via the native
-  // request/authorization path it was never actually part of.
+  // app/(app)/manufacturer/packaging-items/[id]/page.tsx already does.
+  //
+  // Stage 7.10 — a completed Supplier Response
+  // (externalProduct.responseStatus === 'COMPLETED') now feeds its
+  // actual field values in here too, using the exact same "what's
+  // provided" definition computeExternalComponentReadiness uses
+  // (getExternalSupplierProvidedFields) as authorizedAttributes — so
+  // lib/assessment-findings.ts's per-section checks naturally produce
+  // real PASS/WARNING/MISSING findings from this data instead of always
+  // reading it as fully absent. Anything short of COMPLETED still
+  // reports every field as absent (UNVERIFIED), unchanged from before.
   const inputs: ComponentAssessmentInput[] = await Promise.all(
     components.map(async (component) => {
       if (component.externalSupplierProductId) {
+        const externalProduct = await getExternalSupplierProduct(
+          component.externalSupplierProductId
+        );
+        const providedFields = getExternalSupplierProvidedFields(externalProduct);
+        const hasResponseEvidence =
+          externalProduct?.responseStatus === "COMPLETED" &&
+          (externalProduct.responseEvidenceDocumentNames?.length ?? 0) > 0;
+
+        // A completed response's mocked evidence is filenames only (no
+        // full Evidence record — see ExternalSupplierProduct's
+        // responseEvidenceDocumentNames comment), so it's represented
+        // here as one synthetic Evidence-shaped item whose documentName
+        // matches EVIDENCE_REQUIREMENT_LABEL, the same synthetic label
+        // lib/readiness.ts's computeComponentReadiness already keys
+        // evidence authorization off of for native components.
+        const evidenceItems: Evidence[] = hasResponseEvidence
+          ? [
+              {
+                id: `${component.externalSupplierProductId}-response-evidence`,
+                productVersionId: "",
+                documentName: EVIDENCE_REQUIREMENT_LABEL,
+                evidenceType: "Supplier Response Evidence",
+                issuingAuthority: "",
+                issueDate: "",
+                expirationDate: "",
+                status: "VALID",
+                supportedAttributes: [],
+              },
+            ]
+          : [];
+        const authorizedAttributes = hasResponseEvidence
+          ? [...providedFields, EVIDENCE_REQUIREMENT_LABEL]
+          : providedFields;
+
         return {
           componentId: component.id,
-          authorizedAttributes: [],
-          physical: EMPTY_PHYSICAL,
-          circularity: EMPTY_CIRCULARITY,
-          chemicalSafety: EMPTY_CHEMICAL_SAFETY,
-          evidenceItems: [],
-          readiness: computeExternalComponentReadiness(),
+          authorizedAttributes,
+          physical: {
+            materialFamily: externalProduct?.knownMaterialFamily ?? "",
+            specificMaterial: externalProduct?.knownMaterialComposition ?? "",
+            netWeightGrams: externalProduct?.knownWeightGrams ?? 0,
+            dimensions: externalProduct?.knownDimensions ?? "",
+            thicknessMm: externalProduct?.knownThicknessMm ?? 0,
+            packagingFunction: externalProduct?.knownPackagingFunction ?? "",
+          },
+          circularity: {
+            totalRecycledContentPercent: externalProduct?.totalRecycledContentPercent ?? 0,
+            pcrYieldPercent: externalProduct?.pcrYieldPercent ?? 0,
+            preConsumerYieldPercent: externalProduct?.preConsumerYieldPercent ?? 0,
+            dfrGrade: externalProduct?.dfrGrade ?? "",
+            reusabilityStatus: "",
+          },
+          chemicalSafety: {
+            heavyMetalPpm: externalProduct?.heavyMetalPpm,
+            pfasStatus: externalProduct?.pfasStatus ?? "NOT_PROVIDED",
+            pfasIntentionallyAdded: null,
+            reachSvhcStatus: externalProduct?.reachSvhcStatus ?? "NOT_PROVIDED",
+            scipCode: externalProduct?.scipCode,
+            rohsStatus: externalProduct?.rohsStatus ?? "NOT_PROVIDED",
+          },
+          evidenceItems,
+          readiness: computeExternalComponentReadiness(externalProduct),
         };
       }
 

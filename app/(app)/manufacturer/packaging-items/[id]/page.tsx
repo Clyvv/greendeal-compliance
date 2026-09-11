@@ -74,10 +74,11 @@ export default async function PackagingItemDetailsPage({
           component,
           externalProduct,
           // Stage 7.8 — included in the readiness rollup now (see
-          // below), always UNVERIFIED — there's no supplier org to
-          // request/authorize anything from (STAGE_7_REVIEW.md's
-          // original Stage 7.3 exclusion note, now superseded).
-          readiness: computeExternalComponentReadiness(),
+          // below); UNVERIFIED unless Stage 7.10's Supplier Response
+          // Link has since been completed for this record, in which
+          // case computeExternalComponentReadiness reflects the
+          // supplier-provided fields instead (see that function).
+          readiness: computeExternalComponentReadiness(externalProduct),
         };
       }
 
@@ -126,7 +127,17 @@ export default async function PackagingItemDetailsPage({
   const nativeComponents = resolvedComponents.filter(
     (resolved) => resolved.kind === "NATIVE"
   );
-  const externalComponentCount = resolvedComponents.length - nativeComponents.length;
+  const externalComponents = resolvedComponents.filter(
+    (resolved) => resolved.kind === "EXTERNAL"
+  );
+  const externalComponentCount = externalComponents.length;
+  // Stage 7.10 — split out completed-response external components so
+  // the caption below doesn't call supplier-approved data "unverified,
+  // manufacturer-provided" once a real supplier has actually completed
+  // a response for it (see computeExternalComponentReadiness).
+  const unverifiedExternalComponentCount = externalComponents.filter(
+    (resolved) => resolved.externalProduct?.responseStatus !== "COMPLETED"
+  ).length;
 
   // Stage 7.8 — external components are now INCLUDED in the readiness
   // rollup (previously excluded entirely — STAGE_7_REVIEW.md's Stage
@@ -200,14 +211,30 @@ export default async function PackagingItemDetailsPage({
             summary={overallReadinessSummary}
             canRunAssessment={nativeReadinessSummary.isFullyComplete}
           />
-          {externalComponentCount > 0 && (
+          {unverifiedExternalComponentCount > 0 && (
             <p className="text-xs text-slate-500">
-              {externalComponentCount} component
-              {externalComponentCount === 1 ? "" : "s"} below{" "}
-              {externalComponentCount === 1 ? "uses" : "use"} unverified,
+              {unverifiedExternalComponentCount} component
+              {unverifiedExternalComponentCount === 1 ? "" : "s"} below{" "}
+              {unverifiedExternalComponentCount === 1 ? "uses" : "use"} unverified,
               manufacturer-provided data (no registered Greendeal
               supplier) — counted above as unverified, not as authorized
               supplier data.
+            </p>
+          )}
+          {externalComponentCount > unverifiedExternalComponentCount && (
+            <p className="text-xs text-slate-500">
+              {externalComponentCount - unverifiedExternalComponentCount}{" "}
+              component
+              {externalComponentCount - unverifiedExternalComponentCount === 1
+                ? ""
+                : "s"}{" "}
+              below{" "}
+              {externalComponentCount - unverifiedExternalComponentCount === 1
+                ? "uses"
+                : "use"}{" "}
+              data from a completed supplier response — more trusted than
+              manufacturer-only entry, but still not a fully onboarded
+              Greendeal Supplier Product.
             </p>
           )}
         </div>

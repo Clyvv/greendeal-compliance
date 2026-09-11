@@ -1,4 +1,4 @@
-import type { DataRequestStatus } from "@/lib/types";
+import type { DataRequestStatus, ExternalSupplierProduct } from "@/lib/types";
 import type { StatusPillStatus } from "@/components/ui/status-pill";
 import { REQUESTABLE_FIELD_SECTIONS } from "@/lib/requests/fields";
 
@@ -62,7 +62,21 @@ export interface ComponentReadiness {
   // "not yet requested" (NOT_READY, which implies a request could fix
   // it). UNVERIFIED is its own honest state instead — see
   // computeExternalComponentReadiness below.
-  overallStatus: "COMPLETE" | "PARTIAL" | "NOT_READY" | "UNVERIFIED";
+  //
+  // Stage 7.10 — SUPPLIER_RESPONSE added for an external component
+  // whose supplier has completed the Supplier Response Link
+  // (ExternalSupplierProduct.responseStatus === 'COMPLETED') AND every
+  // REQUIRED_PPWR_FIELDS value + evidence is now actually present.
+  // Deliberately its own state, not reused as COMPLETE — a completed
+  // supplier response is real, judgment-backed data (see
+  // getExternalSupplierProvidedFields below), meaningfully better than
+  // UNVERIFIED, but it never went through the native request/
+  // authorization pipeline and isn't a registered Greendeal Supplier
+  // Product, so treating it identically to COMPLETE would overstate its
+  // trust level (AGENTS.md's "Supplier Response Link" section is
+  // explicit that it must not be conflated with a fully onboarded
+  // SupplierProduct).
+  overallStatus: "COMPLETE" | "PARTIAL" | "NOT_READY" | "UNVERIFIED" | "SUPPLIER_RESPONSE";
 }
 
 /**
@@ -140,36 +154,104 @@ export function computeComponentReadiness(params: {
   };
 }
 
+// Stage 7.10 — maps each REQUEST_PPWR_FIELDS-and-beyond label to the
+// ExternalSupplierProduct property that a completed Supplier Response
+// (lib/services/mockExternalSupplierService.submitSupplierResponse)
+// populates it from, and whether that property currently holds a real
+// value. Exported so mockAssessmentService can reuse the exact same
+// notion of "provided" for authorizedAttributes — one definition of
+// "known" for a completed response, not two that could drift apart.
+const EXTERNAL_FIELD_PROVIDED_CHECKS: Record<
+  string,
+  (product: ExternalSupplierProduct) => boolean
+> = {
+  "Material Composition": (p) => Boolean(p.knownMaterialComposition?.trim()),
+  "Net Weight": (p) => p.knownWeightGrams !== undefined,
+  Dimensions: (p) => Boolean(p.knownDimensions?.trim()),
+  Thickness: (p) => p.knownThicknessMm !== undefined,
+  "Total Recycled Content": (p) => p.totalRecycledContentPercent !== undefined,
+  PCR: (p) => p.pcrYieldPercent !== undefined,
+  "Pre-Consumer Recycled Content": (p) => p.preConsumerYieldPercent !== undefined,
+  "DfR Grade": (p) => Boolean(p.dfrGrade?.trim()),
+  "Heavy Metals": (p) => p.heavyMetalPpm !== undefined,
+  PFAS: (p) => Boolean(p.pfasStatus && p.pfasStatus !== "NOT_PROVIDED"),
+  REACH: (p) => Boolean(p.reachSvhcStatus && p.reachSvhcStatus !== "NOT_PROVIDED"),
+  SCIP: (p) => Boolean(p.scipCode?.trim()),
+  RoHS: (p) => Boolean(p.rohsStatus && p.rohsStatus !== "NOT_PROVIDED"),
+};
+
+/**
+ * Every field label (across all sections, not just REQUIRED_PPWR_FIELDS)
+ * that a completed Supplier Response has actually provided a real value
+ * for. Returns `[]` for anything short of `responseStatus: 'COMPLETED'`
+ * — a SENT-but-not-yet-answered request must not start counting as
+ * partial progress.
+ */
+export function getExternalSupplierProvidedFields(
+  product: ExternalSupplierProduct | undefined
+): string[] {
+  if (!product || product.responseStatus !== "COMPLETED") return [];
+  return Object.entries(EXTERNAL_FIELD_PROVIDED_CHECKS)
+    .filter(([, isProvided]) => isProvided(product))
+    .map(([field]) => field);
+}
+
 /**
  * Stage 7.8 — readiness for a component backed by an
  * ExternalSupplierProduct (Stage 7.3) instead of a real SupplierProduct.
- * Always the same shape: none of REQUIRED_PPWR_FIELDS (Circularity +
- * Chemical Safety) are even modeled on ExternalSupplierProduct (see
- * lib/types/external-supplier-product.ts — it only ever captures
- * knownMaterialFamily/knownMaterialComposition/knownWeightGrams, none
- * of which are PPWR-required fields), and there's no DataRequest/
- * DataApproval pipeline possible against it at all (no supplier org to
- * request from) — so every required field and the evidence requirement
- * is genuinely NOT_REQUESTED (accurate, not a euphemism: it was never
- * part of any request, because no request is possible), and
- * satisfiedCount is always 0. This still contributes its real
- * requiredCount to summarizeReadiness below, so a packaging item's
- * overall % honestly reflects an unverified component dragging it
- * down — it just never gets folded into "COMPLETE" the way an
- * authorized native component does (see overallStatus's comment above).
+ * There's no DataRequest/DataApproval pipeline possible against it at
+ * all (no supplier org to request from), so a required field is never
+ * AUTHORIZED via that pipeline — but Stage 7.10 adds one real way a
+ * field can still become genuinely known: the actual supplier
+ * completing the Supplier Response Link (`responseStatus ===
+ * 'COMPLETED'`; see getExternalSupplierProvidedFields above). Absent
+ * that, every required field and the evidence requirement stays
+ * NOT_REQUESTED (accurate: never part of any request, because no
+ * request is possible) and satisfiedCount is 0, exactly as before
+ * Stage 7.10. This still contributes its real requiredCount to
+ * summarizeReadiness below either way, so a packaging item's overall %
+ * honestly reflects this component's actual state.
  */
-export function computeExternalComponentReadiness(): ComponentReadiness {
+export function computeExternalComponentReadiness(
+  externalProduct?: ExternalSupplierProduct
+): ComponentReadiness {
+  const providedFields = getExternalSupplierProvidedFields(externalProduct);
+  const hasEvidence =
+    externalProduct?.responseStatus === "COMPLETED" &&
+    (externalProduct.responseEvidenceDocumentNames?.length ?? 0) > 0;
+
   const requiredFields: RequiredFieldReadiness[] = REQUIRED_PPWR_FIELDS.map((field) => ({
     field,
-    state: "NOT_REQUESTED",
+    // Reusing "AUTHORIZED" here is deliberate, not a stretch: once a
+    // response is COMPLETED, this value came directly from the actual
+    // supplier (verificationStatus 'SUPPLIER_APPROVED' — see
+    // buildExternalSupplierProvenance), which is a genuinely different
+    // and more trustworthy state than "not requested". The distinction
+    // from a natively-authorized field lives in overallStatus below,
+    // not in per-field state naming.
+    state: providedFields.includes(field) ? "AUTHORIZED" : "NOT_REQUESTED",
   }));
+
+  const satisfiedCount =
+    requiredFields.filter((entry) => entry.state === "AUTHORIZED").length +
+    (hasEvidence ? 1 : 0);
+  const requiredCount = requiredFields.length + 1;
+
+  let overallStatus: ComponentReadiness["overallStatus"];
+  if (satisfiedCount === 0) {
+    overallStatus = "UNVERIFIED";
+  } else if (satisfiedCount === requiredCount) {
+    overallStatus = "SUPPLIER_RESPONSE";
+  } else {
+    overallStatus = "PARTIAL";
+  }
 
   return {
     requiredFields,
-    evidence: { state: "NOT_REQUESTED" },
-    requiredCount: requiredFields.length + 1,
-    satisfiedCount: 0,
-    overallStatus: "UNVERIFIED",
+    evidence: { state: hasEvidence ? "AUTHORIZED" : "NOT_REQUESTED" },
+    requiredCount,
+    satisfiedCount,
+    overallStatus,
   };
 }
 
@@ -186,6 +268,13 @@ export const COMPONENT_READINESS_TO_PILL: Record<
   // PARTIAL by label text ("Unverified" vs "Partial"), same precedent
   // lib/assessment-findings.ts already uses for WARNING vs MISSING.
   UNVERIFIED: "missing",
+  // Genuinely good news (every required field came from the actual
+  // supplier via a completed response) — reuses the "complete" (✓)
+  // icon, same precedent components/provenance/provenance-badge.tsx
+  // already sets for VERIFIED vs SUPPLIER_APPROVED sharing one icon.
+  // The label text ("Supplier-Provided" vs "Complete") is what keeps
+  // this from reading as equivalent to native COMPLETE.
+  SUPPLIER_RESPONSE: "complete",
 };
 
 export const COMPONENT_READINESS_LABELS: Record<
@@ -196,6 +285,7 @@ export const COMPONENT_READINESS_LABELS: Record<
   PARTIAL: "Partial",
   NOT_READY: "Not Requested",
   UNVERIFIED: "Unverified",
+  SUPPLIER_RESPONSE: "Supplier-Provided",
 };
 
 export interface MissingGroup {

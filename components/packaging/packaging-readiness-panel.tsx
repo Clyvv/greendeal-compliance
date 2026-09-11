@@ -66,7 +66,9 @@ export function PackagingReadinessPanel({
   summary: PackagingReadinessSummary;
   canRunAssessment: boolean;
 }) {
-  const hasUnverifiedRows = rows.some((row) => row.kind === "EXTERNAL");
+  const hasUnverifiedRows = rows.some(
+    (row) => row.kind === "EXTERNAL" && row.externalProduct?.responseStatus !== "COMPLETED"
+  );
 
   return (
     <Card>
@@ -106,6 +108,7 @@ export function PackagingReadinessPanel({
                 key={row.component.id}
                 component={row.component}
                 externalProduct={row.externalProduct}
+                readiness={row.readiness}
               />
             ) : (
               <ComponentReadinessRow
@@ -277,12 +280,21 @@ function ComponentReadinessRow({
 // "View Component" link here (unlike the assessment results page's
 // equivalent) — this row already lives on the same Packaging Item
 // Details page as the component's own card, just below.
+// Stage 7.10 — an external component's row now varies by
+// responseStatus: unchanged ⚠/✕ styling for NOT_SENT/SENT (nothing
+// PPWR-required is known from this source yet), but a completed
+// Supplier Response gets its own per-field checklist (reusing
+// FieldReadinessLine, same as native components) plus the correct
+// overallStatus pill (COMPONENT_READINESS_TO_PILL/LABELS — never a
+// hardcoded "Unverified").
 function ExternalComponentReadinessRow({
   component,
   externalProduct,
+  readiness,
 }: {
   component: PackagingComponent;
   externalProduct?: ExternalSupplierProduct;
+  readiness: ComponentReadiness;
 }) {
   const provenance = externalProduct
     ? buildExternalSupplierProvenance(externalProduct)
@@ -290,6 +302,7 @@ function ExternalComponentReadinessRow({
         sourceType: "MANUFACTURER_PROVIDED",
         verificationStatus: "UNVERIFIED",
       });
+  const isCompletedResponse = externalProduct?.responseStatus === "COMPLETED";
 
   const knownFields: { label: string; value?: string }[] = [
     { label: "Material Family", value: externalProduct?.knownMaterialFamily },
@@ -307,7 +320,13 @@ function ExternalComponentReadinessRow({
   ];
 
   return (
-    <div className="rounded-md border border-amber-200 bg-amber-50/40 p-4">
+    <div
+      className={
+        isCompletedResponse
+          ? "rounded-md border border-slate-200 p-4"
+          : "rounded-md border border-amber-200 bg-amber-50/40 p-4"
+      }
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-slate-900">
@@ -318,15 +337,22 @@ function ExternalComponentReadinessRow({
             <ProvenanceBadge provenance={provenance} />
           </div>
         </div>
-        <StatusPill status="missing" label="Unverified" />
+        <StatusPill
+          status={COMPONENT_READINESS_TO_PILL[readiness.overallStatus]}
+          label={COMPONENT_READINESS_LABELS[readiness.overallStatus]}
+        />
       </div>
 
       <div className="mt-3 space-y-1">
         {knownFields.map(({ label, value }) =>
           value ? (
-            <p key={label} className="text-sm text-amber-700">
-              <span aria-hidden="true">⚠</span> {label} — Manufacturer
-              Provided
+            <p
+              key={label}
+              className={`text-sm ${isCompletedResponse ? "text-emerald-700" : "text-amber-700"}`}
+            >
+              <span aria-hidden="true">{isCompletedResponse ? "✓" : "⚠"}</span>{" "}
+              {label} —{" "}
+              {isCompletedResponse ? "Supplier-Provided" : "Manufacturer Provided"}
             </p>
           ) : (
             <p key={label} className="text-sm text-slate-500">
@@ -334,10 +360,40 @@ function ExternalComponentReadinessRow({
             </p>
           )
         )}
-        <p className="text-sm text-slate-500">
-          <span aria-hidden="true">✕</span> Circularity &amp; Chemical
-          Safety data Missing — not available from this source
-        </p>
+
+        {isCompletedResponse ? (
+          <>
+            {/* Deliberately NOT FieldReadinessLine's generic
+                NOT_REQUESTED suffix ("Not yet requested") — there's no
+                request pipeline here to point at; a field the supplier
+                simply left blank on their completed response is its
+                own distinct state. */}
+            {readiness.requiredFields.map(({ field, state }) => (
+              <p
+                key={field}
+                className={`text-sm ${state === "AUTHORIZED" ? "text-emerald-700" : "text-slate-500"}`}
+              >
+                <span aria-hidden="true">{state === "AUTHORIZED" ? "✓" : "✕"}</span>{" "}
+                {field}
+                {state === "AUTHORIZED" ? "" : " — Not answered by supplier"}
+              </p>
+            ))}
+            <p
+              className={`text-sm ${readiness.evidence.state === "AUTHORIZED" ? "text-emerald-700" : "text-slate-500"}`}
+            >
+              <span aria-hidden="true">
+                {readiness.evidence.state === "AUTHORIZED" ? "✓" : "✕"}
+              </span>{" "}
+              {EVIDENCE_REQUIREMENT_LABEL}
+              {readiness.evidence.state === "AUTHORIZED" ? "" : " — Not provided"}
+            </p>
+          </>
+        ) : (
+          <p className="text-sm text-slate-500">
+            <span aria-hidden="true">✕</span> Circularity &amp; Chemical
+            Safety data Missing — not available from this source
+          </p>
+        )}
       </div>
     </div>
   );

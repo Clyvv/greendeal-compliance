@@ -9,14 +9,14 @@ import {
 } from "@/lib/services/mockPackagingService";
 import {
   createExternalSupplierProduct,
-  inviteSupplier,
+  requestInformationFromSupplier,
 } from "@/lib/services/mockExternalSupplierService";
 import { CURRENT_MANUFACTURER_ORG_ID } from "@/lib/constants";
 import type {
   DataSourceType,
   PackagingComponent,
 } from "@/lib/types";
-import type { InviteSupplierResult } from "@/lib/services/mockExternalSupplierService";
+import type { RequestInformationResult } from "@/lib/services/mockExternalSupplierService";
 
 // Invoked directly via a plain <form action={...}> (not a client
 // component calling it), so redirect() here is safe — there's no
@@ -170,15 +170,23 @@ export async function removeComponentAction(
   revalidatePackagingItem(packagingItemId);
 }
 
-// Stage 7.3 — "Invite Supplier" affordance on an External Supplier
-// Product's component card (original requirements doc §11: "This
-// product is not currently maintained by the supplier in Greendeal.
-// [Invite Supplier]"). Simulated only, per this stage's explicit
-// scope — no real email is sent, and this deliberately does NOT build
-// the claim/onboarding flow a real invite would eventually trigger.
-export async function inviteSupplierAction(
+// Stage 7.10 — "Request Information from Supplier" affordance on an
+// External Supplier Product's component card, replacing Stage 7.3's
+// "Invite Supplier" (removed — see mockExternalSupplierService's
+// requestInformationFromSupplier comment). Simulated only — no real
+// email is sent; this just generates the response link + email
+// content for the confirmation dialog. Revalidates the packaging item
+// so the card's "Response requested" indicator reflects the new
+// responseStatus immediately.
+export async function requestInformationFromSupplierAction(
   externalSupplierProductId: string,
-  email: string
-): Promise<InviteSupplierResult> {
-  return inviteSupplier(externalSupplierProductId, email);
+  packagingItemId: string,
+  email?: string
+): Promise<RequestInformationResult> {
+  const result = await requestInformationFromSupplier(
+    externalSupplierProductId,
+    email
+  );
+  revalidatePackagingItem(packagingItemId);
+  return result;
 }

@@ -2,7 +2,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StatusPill } from "@/components/ui/status-pill";
 import { ProvenanceBadge } from "@/components/provenance/provenance-badge";
-import { InviteSupplierButton } from "./invite-supplier-button";
+import { RequestInformationButton } from "./request-information-button";
 import { RemoveComponentButton } from "./remove-component-button";
 import { DetailField } from "./packaging-component-card";
 import { buildExternalSupplierProvenance } from "@/lib/provenance";
@@ -18,8 +18,13 @@ import type { ExternalSupplierProduct, PackagingComponent } from "@/lib/types";
  * mockPackagingService.addPackagingComponent's comment) would
  * misleadingly imply a supplier exists and simply hasn't been asked
  * yet. This card replaces that with an explicit "No registered
- * supplier" state and an "Invite Supplier" affordance instead of a
- * "Request Data" button.
+ * supplier" state and a "Request Information from Supplier" affordance
+ * (Stage 7.10 — see request-information-button.tsx) instead of a
+ * "Request Data" button. Once the supplier completes that response
+ * (responseStatus 'COMPLETED'), the banner below flips to a success
+ * state and the ProvenanceBadge above automatically reflects the
+ * upgraded sourceType/verificationStatus (buildExternalSupplierProvenance
+ * always reads those straight off the entity).
  */
 export function ExternalPackagingComponentCard({
   component,
@@ -88,22 +93,51 @@ export function ExternalPackagingComponentCard({
           />
         </dl>
 
-        <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
-          <p className="text-sm text-amber-800">
-            This product is not currently maintained by the supplier in
-            Greendeal.
-          </p>
-          <div className="mt-2">
-            <InviteSupplierButton
-              externalSupplierProductId={
-                externalSupplierProduct?.id ??
-                component.externalSupplierProductId ??
-                ""
-              }
-              defaultEmail={externalSupplierProduct?.supplierEmail}
-            />
+        {externalSupplierProduct?.responseStatus === "COMPLETED" ? (
+          <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3">
+            <p className="text-sm text-emerald-800">
+              ✓ The supplier completed their response — this record now
+              reflects supplier-provided data (see provenance above),
+              though it&rsquo;s still not a fully onboarded Greendeal
+              Supplier Product.
+            </p>
+            <div className="mt-2">
+              <RequestInformationButton
+                externalSupplierProductId={externalSupplierProduct.id}
+                packagingItemId={packagingItemId}
+                defaultEmail={externalSupplierProduct.supplierEmail}
+                responseStatus={externalSupplierProduct.responseStatus}
+              />
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="rounded-md border border-amber-200 bg-amber-50 p-3">
+            <p className="text-sm text-amber-800">
+              This product is not currently maintained by the supplier in
+              Greendeal.
+              {externalSupplierProduct?.responseStatus === "SENT" && (
+                <>
+                  {" "}
+                  <span className="font-medium">
+                    ⏳ Information requested — awaiting supplier response.
+                  </span>
+                </>
+              )}
+            </p>
+            <div className="mt-2">
+              <RequestInformationButton
+                externalSupplierProductId={
+                  externalSupplierProduct?.id ??
+                  component.externalSupplierProductId ??
+                  ""
+                }
+                packagingItemId={packagingItemId}
+                defaultEmail={externalSupplierProduct?.supplierEmail}
+                responseStatus={externalSupplierProduct?.responseStatus ?? "NOT_SENT"}
+              />
+            </div>
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-2 border-t border-slate-200 pt-3">
           <RemoveComponentButton

@@ -51,18 +51,6 @@ Status column: 🟡 mock only (current) · 🟢 contract finalized · 🔵 built
 | `replaceComponentProduct(componentId, newProductId)` | `PATCH /api/v1/packaging-components/{componentId}` | 🟡 |
 | `getPackagingReadiness(itemId)` | `GET /api/v1/packaging-items/{itemId}/readiness` | 🟡 |
 
-Note (Stage 7.3): `addPackagingComponent`'s `input` is a discriminated
-union on a `source` field — `{ source: 'SUPPLIER_PRODUCT', role,
-supplierProductId, productVersionId }` or `{ source:
-'EXTERNAL_SUPPLIER_PRODUCT', role, externalSupplierProductId }` — never
-a single object with optional fields for both. The real REST body would
-likely mirror this as a `source` discriminator field. `PackagingComponent`
-itself gained optional `supplierProductId`/`productVersionId`/
-`externalSupplierProductId` fields to store either outcome (see
-DOMAIN.md §3) — exactly one of (the first two) or the third is ever set,
-enforced by this function, not by the stored shape. `replaceComponentProduct`
-remains unimplemented.
-
 ## mockRequestService
 
 | Function | Method + Path | Status |
@@ -101,21 +89,6 @@ swap doesn't require new UI states later.
 | `getDocument(documentId)` | `GET /api/v1/documents/{documentId}` | 🟡 |
 | `downloadDocument(documentId)` | `GET /api/v1/documents/{documentId}/download` (binary) | 🟡 |
 
-## mockOrganizationService
-
-Small lookup layer used throughout the app to resolve an org id (e.g.
-`SupplierProduct.supplierId`, `DataRequest.requestingOrgId`) into a
-display name wherever supplier/manufacturer org info is shown — most
-notably the provenance chain required by AGENTS.md §6 ("Source: PET
-Bottle 500ml v1.0, PET Solutions GmbH") and, as of Stage 7.2, the
-`ProvenanceBadge` source name. Present in code since early stages but
-previously undocumented here.
-
-| Function | Method + Path | Status |
-|---|---|---|
-| `getOrganizations()` | `GET /api/v1/organizations` | 🟡 |
-| `getOrganization(orgId)` | `GET /api/v1/organizations/{orgId}` | 🟡 |
-
 ---
 
 ## Post-Stage-7 extension — new services
@@ -126,21 +99,6 @@ previously undocumented here.
 |---|---|---|
 | `createExternalSupplierProduct(manufacturerId, input)` | `POST /api/v1/manufacturers/{id}/external-supplier-products` | 🟡 |
 | `getExternalSupplierProduct(id)` | `GET /api/v1/external-supplier-products/{id}` | 🟡 |
-| `inviteSupplier(externalProductId, email)` | `POST /api/v1/external-supplier-products/{id}/invite` (simulated only — no real email) | 🟡 |
-
-Implemented in Stage 7.3, alongside the Add Component flow's three
-source options (`components/packaging/add-component-flow.tsx`).
-`createExternalSupplierProduct`'s `input.sourceType` is decided by the
-caller, not this service — "Add External Supplier Product" (the full
-form, captures supplier contact details so a later "Invite Supplier"
-is meaningful) always passes `MANUFACTURER_PROVIDED`; "Use Existing
-Manufacturer-Provided Data" (a lighter form — just a source name +
-product name, no contact details collected) always passes `IMPORTED`.
-Both start `verificationStatus: 'UNVERIFIED'`; nothing in this stage
-upgrades that. `inviteSupplier` is a pure confirmation stub — it
-persists nothing on the record and does not build the claim/onboarding
-flow a real invite would eventually trigger (explicitly out of scope
-for this stage).
 
 ### mockPublicRequestService (no auth — public-facing)
 
@@ -154,33 +112,6 @@ for this stage).
 spam/bot protection (captcha), and probably email verification of the
 requester before the supplier sees it as legitimate — out of scope for
 the prototype but worth flagging to the backend team now.
-
-Implemented in Stage 7.5 (`components/public-request/public-request-form.tsx`
-→ `lib/public-request/actions.ts` → this function). `submitPublicDataRequest`
-re-validates the slug/product server-side (never trusts what the client
-last rendered), then constructs the `DataRequest` directly — no
-`requestingOrgId` (there's no Greendeal Organization behind an
-unauthenticated submission) and no `packagingItemId` (this request isn't
-"for" any Greendeal packaging item), replaced by a `requester` object
-(DOMAIN.md §8a) and `origin: 'PUBLIC_REQUEST_LINK'`. Its `id` uses a
-separate `REQ-XXXX` sequence (not `mockRequestService`'s `dr-N` one) so
-the confirmation screen has a human-presentable reference number to
-show a requester with no Greendeal dashboard to look anything else up
-in. Returns only `{ requestId, supplierName }` — deliberately nothing
-else (not even the submitted `requestedAttributes`/`purpose` back, let
-alone any compliance data), per this stage's "a public link is a
-request endpoint, never a data page" boundary (AGENTS.md §10a).
-
-Because `DataRequest.requestingOrgId`/`packagingItemId` are now optional
-or the whole codebase, `getOrganization`, `getPackagingItem`, and
-`getPackagingComponentsByProduct` (mockOrganizationService /
-mockPackagingService) were all widened to accept `undefined` and return
-`undefined`/`[]` rather than throwing — same pattern Stage 7.3 already
-established for `PackagingComponent`'s optional foreign keys. See
-`lib/requests/requester.ts`'s `formatRequestingPartyName` for how the
-Supplier/Manufacturer Data Requests pages render a request whose
-`requestingOrgId` is absent (falls back to the `requester` object's
-company name) instead of calling `getOrganization(undefined)` blindly.
 
 ### mockProvenanceService
 
@@ -196,23 +127,29 @@ company name) instead of calling `getOrganization(undefined)` blindly.
 | `submitRequestResponse(requestId, response)` | `POST /api/v1/data-requests/{id}/response` | 🟡 |
 | `claimExternalSupplierProduct(externalProductId, realSupplierId)` | `POST /api/v1/external-supplier-products/{id}/claim` | 🟡 |
 
-Implemented in Stage 7.6 (`components/requests/data-request-approval-flow.tsx`
-renders it inline next to each field's approve checkbox — original
-requirements doc §8's "existing data coverage" comparison, not a
-separate summary page). Works identically for both origins —
-`request.supplierProductId` is always set regardless of GREENDEAL vs
-PUBLIC_REQUEST_LINK, so this never branches on `origin` itself; it just
-resolves that product's current `ProductVersion` + `Evidence` and
-checks, per requested field, whether a real value already exists
-(`AVAILABLE`) or not (`MISSING`) — an illustrative, simplified
-per-field heuristic (same spirit as `lib/assessment-findings.ts`'s
-disclaimer), never a judgment on whether the value is *good enough*.
-`NOT_APPLICABLE` counts as `AVAILABLE` (a real, on-file answer);
-only `NOT_PROVIDED` (or no resolvable product/version at all — the
-prompt's called-out edge case) counts as `MISSING`, handled by
-returning `undefined`/falling through rather than throwing.
-`submitRequestResponse`/`claimExternalSupplierProduct` remain
-unimplemented.
+---
+
+### mockExternalSupplierService — extensions
+
+| Function | Method + Path | Status |
+|---|---|---|
+| `requestInformationFromSupplier(externalProductId, email?)` — generates (or reuses) a `responseToken`, sets `responseStatus: 'SENT'`, returns simulated email content (to/from/subject/body incl. the response link) for display in a dialog | `POST /api/v1/external-supplier-products/{id}/request-information` | 🟡 |
+| `getSupplierResponseData(token)` | `GET /api/v1/public/supplier-response/{token}` | 🟡 |
+| `submitSupplierResponse(token, input)` — updates the ExternalSupplierProduct's fields, sets `responseStatus: 'COMPLETED'`, `sourceType: 'EXTERNAL_REQUEST_RESPONSE'`, `verificationStatus: 'SUPPLIER_APPROVED'` | `POST /api/v1/public/supplier-response/{token}/submit` | 🟡 |
+
+Implemented in Stage 7.10, replacing Stage 7.3's `inviteSupplier`
+(removed — no separate code path was kept). `requestInformationFromSupplier`
+is invoked from `components/packaging/request-information-button.tsx`,
+which opens a Dialog showing the exact simulated email (still no real
+email is ever sent) plus a Copy Link button. `getSupplierResponseData`/
+`submitSupplierResponse` back the public, unauthenticated
+`/supplier-response/{token}` page (`app/supplier-response/[token]`) —
+same no-auth pattern as `mockPublicRequestService`. A completed
+response also feeds `lib/readiness.ts`'s `computeExternalComponentReadiness`
+and `mockAssessmentService.runAssessment`, via a new
+`getExternalSupplierProvidedFields` helper — see that file's comments
+for why this is a distinct `SUPPLIER_RESPONSE` readiness state, not
+folded into native `COMPLETE`.
 
 ---
 

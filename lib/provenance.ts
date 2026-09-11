@@ -75,19 +75,35 @@ const EXTERNAL_SOURCE_NAMES: Record<"MANUFACTURER_PROVIDED" | "IMPORTED", string
  * upgrades verificationStatus (e.g. a real supplier "claiming" the
  * record), this badge reflects that automatically without a code
  * change here.
+ *
+ * Stage 7.10 — once a Supplier Response is completed (sourceType
+ * 'EXTERNAL_REQUEST_RESPONSE'), the reasoning above flips: the actual
+ * supplier is now the one vouching for the data (they typed it in
+ * themselves via the response link), so sourceName uses the real
+ * supplierCompanyName here — unlike MANUFACTURER_PROVIDED/IMPORTED,
+ * showing "Manufacturer Provided" for this state would misrepresent a
+ * genuine supplier-approved upgrade as still just manufacturer-entered
+ * data.
  */
 export function buildExternalSupplierProvenance(
   externalProduct: {
     sourceType: DataSourceType;
     verificationStatus: VerificationStatus;
+    supplierCompanyName?: string;
   },
   options: ProvenanceOptions = {}
 ): DataProvenance {
-  const sourceName =
+  let sourceName: string;
+  if (externalProduct.sourceType === "EXTERNAL_REQUEST_RESPONSE") {
+    sourceName = externalProduct.supplierCompanyName ?? "Supplier Response";
+  } else if (
     externalProduct.sourceType === "MANUFACTURER_PROVIDED" ||
     externalProduct.sourceType === "IMPORTED"
-      ? EXTERNAL_SOURCE_NAMES[externalProduct.sourceType]
-      : "Manufacturer Provided"; // fallback; only these two sourceTypes are produced by this stage
+  ) {
+    sourceName = EXTERNAL_SOURCE_NAMES[externalProduct.sourceType];
+  } else {
+    sourceName = "Manufacturer Provided"; // fallback; no other sourceType is produced for an ExternalSupplierProduct
+  }
   return {
     sourceType: externalProduct.sourceType,
     sourceName,

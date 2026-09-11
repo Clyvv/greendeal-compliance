@@ -228,6 +228,37 @@ existing one — integrate into what's there.
 
 ---
 
+### Supplier Response Link (distinct from the Public Request Link)
+
+The Public Request Link (§8a above) is for a REQUESTER asking a
+supplier for data. The Supplier Response Link is the reverse: a
+manufacturer has created an `ExternalSupplierProduct` with known data,
+and wants the actual supplier to review, correct, and complete it.
+
+```
+/supplier-response/{token}   — public, unauthenticated
+```
+
+`ExternalSupplierProduct` gains:
+```ts
+responseToken?: string                 // generated when manufacturer requests info
+responseStatus: 'NOT_SENT' | 'SENT' | 'COMPLETED'
+```
+
+The response page is pre-filled with whatever the manufacturer already
+entered (editable, not read-only), grouped the same way as the Supplier
+product wizard sections (DOMAIN.md §2), plus an evidence upload area.
+On submit, the `ExternalSupplierProduct`'s fields are updated with the
+supplier's values, `responseStatus` becomes `COMPLETED`, and its
+`sourceType`/`verificationStatus` should reflect that a real supplier
+now stands behind this data (`sourceType: 'EXTERNAL_REQUEST_RESPONSE'`,
+`verificationStatus: 'SUPPLIER_APPROVED'`) — meaningfully more trusted
+than `MANUFACTURER_PROVIDED`/`UNVERIFIED`, though still not the same as
+a fully onboarded `SupplierProduct` (claiming/onboarding remains out of
+scope per the original doc §11).
+
+---
+
 ## 10. Reference docs
 
 - `DOMAIN.md` — full entity/field-level domain model + sample data
