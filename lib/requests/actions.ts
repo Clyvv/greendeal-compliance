@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import {
   approveDataRequest,
   createDataRequest,
+  generateRequestResult,
   getDataRequest,
   rejectDataRequest,
 } from "@/lib/services/mockRequestService";
@@ -13,6 +14,7 @@ import {
 } from "@/lib/services/mockPackagingService";
 import { CURRENT_MANUFACTURER_ORG_ID } from "@/lib/constants";
 import type { DataApproval } from "@/lib/types";
+import type { GenerateRequestResultResult } from "@/lib/services/mockRequestService";
 
 export interface SubmitDataRequestInput {
   packagingItemId: string;
@@ -145,4 +147,18 @@ export async function rejectDataRequestAction(
   revalidatePath(`/supplier/data-requests/${requestId}`);
   revalidatePath(`/manufacturer/packaging-items/${request.packagingItemId}`);
   revalidatePath("/manufacturer/data-requests");
+}
+
+// Stage 7.12 — invoked from the client
+// components/requests/request-result-notification.tsx, both
+// automatically right after a PUBLIC_REQUEST_LINK-origin request is
+// approved, and later via its "View Notification Email" reopen button
+// (which reuses the same token — see
+// mockRequestService.generateRequestResult).
+export async function generateRequestResultAction(
+  requestId: string
+): Promise<GenerateRequestResultResult> {
+  const result = await generateRequestResult(requestId);
+  revalidatePath(`/supplier/data-requests/${requestId}`);
+  return result;
 }

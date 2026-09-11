@@ -20,7 +20,10 @@ import { useToast } from "@/components/providers/toast-provider";
 // also reused by Stage 5's approval screen and Stage 6's readiness
 // gate), not hardcoded inline in a manufacturer-only component, so
 // there's nothing to extract here — just import it.
-import { REQUESTABLE_FIELD_SECTIONS } from "@/lib/requests/fields";
+import {
+  PUBLIC_REQUEST_EVIDENCE_LABEL,
+  REQUESTABLE_FIELD_SECTIONS,
+} from "@/lib/requests/fields";
 import { submitPublicDataRequestAction } from "@/lib/public-request/actions";
 
 // A single, generic "please also share supporting evidence" checkbox —
@@ -35,7 +38,7 @@ import { submitPublicDataRequestAction } from "@/lib/public-request/actions";
 // lib/requests/fields.ts's groupRequestedAttributesBySection already
 // produces for any unrecognized attribute — no extra plumbing needed
 // wherever a supplier eventually reviews this (Stage 7.6).
-const EVIDENCE_REQUEST_LABEL = "Evidence / Supporting Documents";
+const EVIDENCE_REQUEST_LABEL = PUBLIC_REQUEST_EVIDENCE_LABEL;
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

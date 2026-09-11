@@ -59,4 +59,15 @@ export type DataRequest = {
   // Present only when origin === 'PUBLIC_REQUEST_LINK' — see
   // mockPublicRequestService.submitPublicDataRequest.
   requester?: DataRequestRequester;
+
+  // Stage 7.12 — Request Result Link (AGENTS.md's "Request Result
+  // Link" section). Only ever meaningful for a PUBLIC_REQUEST_LINK-
+  // origin request once it's been APPROVED — a GREENDEAL-origin
+  // requester already has a working in-app view (Stage 5b) and never
+  // needs this. Generated once by
+  // mockRequestService.generateRequestResult (reused on every
+  // subsequent call, never regenerated) and consumed by the public,
+  // unauthenticated /request-result/{token} page.
+  resultToken?: string;
+  resultGeneratedAt?: string; // ISO date
 };

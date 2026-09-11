@@ -9,11 +9,13 @@ import {
   dataApprovals,
   dataRequests,
   evidence,
+  organizations,
   packagingComponents,
   productVersions,
   supplierProducts,
 } from "@/lib/mock-data";
 import { MOCK_TODAY } from "@/lib/constants";
+import { PUBLIC_REQUEST_EVIDENCE_LABEL } from "@/lib/requests/fields";
 
 function today(): string {
   return MOCK_TODAY.toISOString().slice(0, 10);
@@ -370,5 +372,179 @@ export async function getRequestCoverage(
     coverage,
     availableCount,
     totalCount: request.requestedAttributes.length,
+  };
+}
+
+function generateResultToken(): string {
+  return typeof crypto !== "undefined" && "randomUUID" in crypto
+    ? crypto.randomUUID()
+    : `result-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+export interface GenerateRequestResultEmail {
+  to: string;
+  from: string;
+  subject: string;
+  body: string;
+}
+
+export interface GenerateRequestResultResult {
+  requestId: string;
+  resultToken: string;
+  resultUrl: string; // relative path, e.g. "/request-result/{token}"
+  email: GenerateRequestResultEmail;
+}
+
+// Maps to: POST /api/v1/data-requests/{id}/generate-result-link
+// Stage 7.12 — AGENTS.md's "Request Result Link": closes the loop for
+// a PUBLIC_REQUEST_LINK-origin requester, who has no Greendeal account
+// to view approved data in-app the way a GREENDEAL-origin requester
+// does (Stage 5b). Simulated only — no real email is ever sent
+// (API_CONTRACT.md), same posture as
+// mockExternalSupplierService.requestInformationFromSupplier (Stage
+// 7.10) — this generates the result link + email content for display
+// in a dialog. Re-requesting (e.g. the supplier reopens the
+// notification later) reuses the existing token/date rather than
+// minting new ones, same precedent as that function.
+//
+// Refuses anything but an APPROVED PUBLIC_REQUEST_LINK request — a
+// GREENDEAL-origin request must never get a result link (it has its
+// own better, authenticated view), and there is nothing approved yet
+// to link to before APPROVED.
+export async function generateRequestResult(
+  requestId: string
+): Promise<GenerateRequestResultResult> {
+  const request = dataRequests.find((item) => item.id === requestId);
+  if (!request) {
+    throw new Error(`Unknown data request: ${requestId}`);
+  }
+  if (request.origin !== "PUBLIC_REQUEST_LINK") {
+    throw new Error(
+      "Result links only apply to external (public request link) requests."
+    );
+  }
+  if (request.status !== "APPROVED") {
+    throw new Error("This request has not been approved yet.");
+  }
+  if (!request.requester) {
+    throw new Error("This request has no requester contact details on file.");
+  }
+
+  const token = request.resultToken ?? generateResultToken();
+  request.resultToken = token;
+  request.resultGeneratedAt = request.resultGeneratedAt ?? today();
+
+  const supplierOrg = organizations.find((org) => org.id === request.supplierOrgId);
+  const supplierName = supplierOrg?.name ?? "The supplier";
+  const product = supplierProducts.find(
+    (item) => item.id === request.supplierProductId
+  );
+  const productName = product?.name ?? "the requested product";
+  const resultUrl = `/request-result/${token}`;
+
+  const email: GenerateRequestResultEmail = {
+    to: request.requester.email,
+    from: "noreply@greendealcompliance.com",
+    subject: "Your compliance information request has been approved",
+    body: [
+      `Hi ${request.requester.contactName},`,
+      "",
+      `${supplierName} has approved your request for ${productName}. You can view and download the approved information using the secure link below:`,
+      "",
+      `  {{RESULT_LINK}}`,
+      "",
+      `Reference: ${request.id}`,
+      "",
+      "— Greendeal Compliance",
+    ].join("\n"),
+  };
+
+  return {
+    requestId,
+    resultToken: token,
+    resultUrl,
+    email,
+  };
+}
+
+export interface RequestResultData {
+  requestId: string; // shown as the reference number (REQ-XXXX)
+  supplierName: string;
+  productName: string;
+  purpose: string;
+  resultGeneratedAt: string;
+  /** The actual security boundary — only ever the DataApproval's own
+   * approvedAttributes subset, NEVER request.requestedAttributes (which
+   * would leak which fields were asked for but denied/withheld). */
+  approvedAttributes: string[];
+  /** Only Evidence records whose documentName is itself present in
+   * approvedAttributes — never the product version's full evidence
+   * list. Same boundary as above, applied to evidence specifically. */
+  approvedEvidence: Evidence[];
+}
+
+// Maps to: GET /api/v1/public/request-result/{token} — no auth.
+// Stage 7.12 — the read side of the Request Result Link. Returns
+// undefined for an unknown/never-generated token (same pattern
+// mockExternalSupplierService.getSupplierResponseData and
+// mockPublicRequestService use for their own unknown-identifier case),
+// so the page can 404 rather than leak whether a token ever existed.
+// Also refuses a token whose request somehow isn't a currently-APPROVED
+// PUBLIC_REQUEST_LINK request (belt-and-suspenders — generateRequestResult
+// already only ever mints a token for one, but this is the actual
+// public read boundary, so it re-checks rather than trusting that
+// invariant alone).
+//
+// This is a static snapshot at approval time, not a live view — per
+// AGENTS.md, a later re-approval or data change does not retroactively
+// update what this returns.
+export async function getRequestResult(
+  token: string
+): Promise<RequestResultData | undefined> {
+  const request = dataRequests.find((item) => item.resultToken === token);
+  if (!request) return undefined;
+  if (request.origin !== "PUBLIC_REQUEST_LINK" || request.status !== "APPROVED") {
+    return undefined;
+  }
+
+  const approval = dataApprovals.find(
+    (item) => item.dataRequestId === request.id
+  );
+  // Deliberately request.requestedAttributes is never read here at
+  // all — only the DataApproval's own approvedAttributes, so a denied
+  // field can never leak onto this page even by accident.
+  const approvedAttributes = approval?.approvedAttributes ?? [];
+
+  const supplierOrg = organizations.find((org) => org.id === request.supplierOrgId);
+  const product = supplierProducts.find(
+    (item) => item.id === request.supplierProductId
+  );
+  const version = product
+    ? productVersions.find((item) => item.id === product.currentVersionId)
+    : undefined;
+  const evidenceItems = version
+    ? evidence.filter((item) => item.productVersionId === version.id)
+    : [];
+  // A PUBLIC_REQUEST_LINK request never asks for evidence by specific
+  // document name (see lib/requests/fields.ts's PUBLIC_REQUEST_EVIDENCE_LABEL
+  // comment) — it only ever has that one generic "please share
+  // supporting evidence" checkbox. So the boundary here is: approving
+  // that generic item means "share every evidence document on file for
+  // this product", the only interpretation available given what was
+  // actually asked for; anything else in approvedAttributes is matched
+  // by exact documentName (kept for parity with the internal flow's
+  // shape, even though nothing produces that combination today).
+  const approvedEvidence = approvedAttributes.includes(PUBLIC_REQUEST_EVIDENCE_LABEL)
+    ? evidenceItems
+    : evidenceItems.filter((item) => approvedAttributes.includes(item.documentName));
+
+  return {
+    requestId: request.id,
+    supplierName: supplierOrg?.name ?? "The supplier",
+    productName: product?.name ?? "Unknown product",
+    purpose: request.purpose,
+    resultGeneratedAt: request.resultGeneratedAt ?? today(),
+    approvedAttributes,
+    approvedEvidence,
   };
 }

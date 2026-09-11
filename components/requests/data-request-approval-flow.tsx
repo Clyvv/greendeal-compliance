@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { StatusPill } from "@/components/ui/status-pill";
 import { ProvenanceBadge } from "@/components/provenance/provenance-badge";
 import { RequestOriginBadge } from "@/components/requests/request-origin-badge";
+import { RequestResultNotification } from "@/components/requests/request-result-notification";
 import { useToast } from "@/components/providers/toast-provider";
 import {
   approveDataRequestAction,
@@ -72,6 +73,12 @@ export function DataRequestApprovalFlow({
   const [status, setStatus] = useState<DataRequestStatus>(request.status);
   const [resolvedApprovedAttributes, setResolvedApprovedAttributes] =
     useState<string[] | undefined>(approvedAttributes);
+  // Stage 7.12 — flips true exactly once, right when THIS session's
+  // Approve click succeeds (handleApprove below), never on a page
+  // load for a request that was already approved earlier — that's
+  // what tells RequestResultNotification to auto-open its dialog
+  // rather than silently generating a link nobody asked to see yet.
+  const [justApproved, setJustApproved] = useState(false);
   // Default state: everything requested starts checked — the supplier
   // is reviewing what to grant starting from "grant what was asked",
   // not starting blank (this stage's prompt). Every checkbox stays
@@ -118,6 +125,14 @@ export function DataRequestApprovalFlow({
         );
         setStatus("APPROVED");
         setResolvedApprovedAttributes(approval.approvedAttributes);
+        // Stage 7.12 — only a PUBLIC_REQUEST_LINK-origin requester
+        // needs a result link at all (see AGENTS.md's "Request Result
+        // Link" section); a GREENDEAL-origin one already has a
+        // working in-app view (Stage 5b), so this never fires for
+        // that origin.
+        if (origin === "PUBLIC_REQUEST_LINK") {
+          setJustApproved(true);
+        }
         toast({
           title: "Request approved",
           description: `Selected data for ${supplierProductName} is now available to ${requestingOrgName}.`,
@@ -290,6 +305,21 @@ export function DataRequestApprovalFlow({
               provenance={buildSupplierApprovedProvenance(supplierOrgName)}
             />
           </div>
+          {/* Stage 7.12 — only for a PUBLIC_REQUEST_LINK-origin
+              request (AGENTS.md's "Request Result Link" section): the
+              requester has no Greendeal account, so this is their only
+              way to actually retrieve what was just approved. Auto-
+              opens once right after approval (justApproved); the
+              button itself stays available afterward too, so the
+              supplier isn't stuck if they close the dialog first. */}
+          {origin === "PUBLIC_REQUEST_LINK" && (
+            <div className="mt-3">
+              <RequestResultNotification
+                requestId={request.id}
+                autoTrigger={justApproved}
+              />
+            </div>
+          )}
         </div>
       )}
 

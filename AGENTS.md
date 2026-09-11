@@ -259,6 +259,38 @@ scope per the original doc §11).
 
 ---
 
+### Request Result Link (for PUBLIC_REQUEST_LINK-origin requests only)
+
+Native GREENDEAL-origin requesters have a Greendeal account and view
+approved data in-app (Stage 5b). External requesters from the public
+link (Stage 7.5) have no account — once their request is approved, they
+need a separate, secure way to retrieve exactly what was approved.
+
+`DataRequest` gains:
+```ts
+resultToken?: string            // generated once, on approval
+resultGeneratedAt?: string      // ISO date
+```
+
+```
+/request-result/{token}   — public, unauthenticated
+```
+
+This page shows ONLY the fields in `DataApproval.approvedAttributes`
+(never denied/unrequested fields, never the full product profile) plus
+download access to any approved evidence documents (mocked — no real
+file storage). It is a read-only snapshot at approval time, not a live
+view — re-approving or a later data change does not retroactively
+update it in this prototype.
+
+Scope: this only applies to `PUBLIC_REQUEST_LINK`-origin requests. A
+`GREENDEAL`-origin request's approved data continues to be viewed
+in-app via the existing Stage 5b manufacturer view — do not build a
+result link for that case, it's redundant with an existing, better
+(authenticated) path.
+
+---
+
 ## 10. Reference docs
 
 - `DOMAIN.md` — full entity/field-level domain model + sample data

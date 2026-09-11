@@ -98,6 +98,18 @@ export const DEFAULT_SELECTED_EVIDENCE_DOCUMENT_NAMES: string[] = [
 export const EVIDENCE_GROUP_KEY = "EVIDENCE";
 const EVIDENCE_GROUP_TITLE = "Evidence";
 
+// Stage 7.5 — the public request form's single, generic "please also
+// share supporting evidence" checkbox (components/public-request/public-request-form.tsx),
+// deliberately NOT a per-document list like the internal Stage 4 flow
+// (an unauthenticated public visitor is never shown a product's real
+// evidence document names). Exported here — not kept as a private
+// const in that component — so mockRequestService.getRequestResult
+// (Stage 7.12) can recognize it too: an approved generic evidence
+// request means "share all of this product's evidence", the only
+// meaningful interpretation available given the public flow never
+// asked for anything more specific.
+export const PUBLIC_REQUEST_EVIDENCE_LABEL = "Evidence / Supporting Documents";
+
 export interface GroupedRequestedAttributes {
   key: string;
   title: string;

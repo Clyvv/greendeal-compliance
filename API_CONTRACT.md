@@ -101,29 +101,23 @@ swap doesn't require new UI states later.
 | `getExternalSupplierProduct(id)` | `GET /api/v1/external-supplier-products/{id}` | 🟡 |
 | `updateExternalSupplierProduct(id, input)` | `PATCH /api/v1/external-supplier-products/{id}` | 🟡 |
 
-`updateExternalSupplierProduct` backs the "View / Edit Details" link on
-an External Supplier Product's component card
-(`app/(app)/manufacturer/packaging-items/[id]/components/[componentId]`,
-`components/packaging/external-supplier-product-detail-form.tsx`) —
-previously a record was creatable but never viewable/editable again.
-Refuses to change anything once a `hasSupplier: true` record's Supplier
-Response has been `COMPLETED` (that data is supplier-owned at that
-point — see the function's own comment); the form renders fully
-read-only in that case rather than silently no-op-ing a save.
-
-Stage 7.11 — `input.hasSupplier` is now the real discriminator between
-the Add Component flow's two external paths (previously a caller-chosen
+Stage 7.11 — `input.hasSupplier` is the real discriminator between the
+Add Component flow's two external paths (previously a caller-chosen
 `sourceType` of `MANUFACTURER_PROVIDED` vs `IMPORTED`, which conflated
 "a real supplier exists, partially known" with "no supplier exists at
 all" as two variants of one form). `sourceType` is no longer
-caller-decided — this function always sets it to `MANUFACTURER_PROVIDED`
-at creation for both paths; only `submitSupplierResponse` (below) can
-later move a `hasSupplier: true` record to `EXTERNAL_REQUEST_RESPONSE`.
-`input` also grew the full Circularity/Chemical Safety/Specialized
-Domain/evidence field set (previously only on `SubmitSupplierResponseInput`)
-so "Use Existing Manufacturer-Provided Data" (`hasSupplier: false`) can
+caller-decided — `createExternalSupplierProduct` always sets it to
+`MANUFACTURER_PROVIDED` at creation for both paths; only
+`submitSupplierResponse` (below) can later move a `hasSupplier: true`
+record to `EXTERNAL_REQUEST_RESPONSE`. `input` also carries the full
+Circularity/Chemical Safety/Specialized Domain/evidence field set so
+"Use Existing Manufacturer-Provided Data" (`hasSupplier: false`) can
 capture everything at creation time, since there's no later response
-step for it to arrive through.
+step for it to arrive through. `updateExternalSupplierProduct` backs
+the "View / Edit Details" link on an External Supplier Product's
+component card — refuses to change anything once a `hasSupplier: true`
+record's Supplier Response has been `COMPLETED` (that data is
+supplier-owned at that point).
 
 ### mockPublicRequestService (no auth — public-facing)
 
@@ -168,30 +162,49 @@ is invoked from `components/packaging/request-information-button.tsx`,
 which opens a Dialog showing the exact simulated email (still no real
 email is ever sent) plus a Copy Link button. `getSupplierResponseData`/
 `submitSupplierResponse` back the public, unauthenticated
-`/supplier-response/{token}` page (`app/supplier-response/[token]`) —
-same no-auth pattern as `mockPublicRequestService`. A completed
-response also feeds `lib/readiness.ts`'s `computeExternalComponentReadiness`
-and `mockAssessmentService.runAssessment`, via a new
-`getExternalSupplierProvidedFields` helper — see that file's comments
-for why this is a distinct `SUPPLIER_RESPONSE` readiness state, not
-folded into native `COMPLETE`.
+`/supplier-response/{token}` page — same no-auth pattern as
+`mockPublicRequestService`. Stage 7.11 — both now refuse a
+`hasSupplier: false` record (there is no supplier to request anything
+from or receive a response from); `SubmitSupplierResponseInput`'s
+evidence field is `evidenceDocumentNames` (shared with
+`createExternalSupplierProduct`'s `hasSupplier: false` path, which
+populates the same `ExternalSupplierProduct.evidenceDocumentNames`
+field directly at creation instead of through a response). A completed
+response, or any `hasSupplier: false` record, feeds
+`lib/readiness.ts`'s `computeExternalComponentReadiness` and
+`mockAssessmentService.runAssessment` via a shared
+`isExternalSupplierDataUsable`/`getExternalSupplierProvidedFields` gate
+— see that file's comments for the distinct `SUPPLIER_RESPONSE` vs
+`UNVERIFIED_COMPLETE` readiness states, neither folded into native
+`COMPLETE`.
 
-Stage 7.11 — `requestInformationFromSupplier`/`submitSupplierResponse`
-both now refuse a `hasSupplier: false` record (there is no supplier to
-request anything from or receive a response from; the UI never even
-renders the affordance for one, but the service refuses too,
-belt-and-suspenders). `SubmitSupplierResponseInput`'s evidence field was
-renamed `responseEvidenceDocumentNames` → `evidenceDocumentNames` — it's
-now shared with `createExternalSupplierProduct`'s `hasSupplier: false`
-path, which populates the same `ExternalSupplierProduct.evidenceDocumentNames`
-field directly at creation instead of through a response. `lib/readiness.ts`
-gained `isExternalSupplierDataUsable(product)` — true for a completed
-`hasSupplier: true` response OR any `hasSupplier: false` record — as the
-single shared gate `getExternalSupplierProvidedFields`/
-`mockAssessmentService.runAssessment` both use, plus a new
-`UNVERIFIED_COMPLETE` readiness state for a fully-filled-in
-`hasSupplier: false` component (never `SUPPLIER_RESPONSE` — nobody but
-the manufacturer ever confirmed it).
+---
+
+### mockRequestService — further extensions
+
+| Function | Method + Path | Status |
+|---|---|---|
+| `generateRequestResult(requestId)` — generates (or reuses) a `resultToken` on an APPROVED PUBLIC_REQUEST_LINK-origin request, returns simulated email content (to/from/subject/body incl. the result link) | `POST /api/v1/data-requests/{id}/generate-result-link` | 🟡 |
+| `getRequestResult(token)` — public, returns ONLY the DataApproval's approvedAttributes + matching Evidence records for that request | `GET /api/v1/public/request-result/{token}` | 🟡 |
+
+Stage 7.12 — closes the loop for a PUBLIC_REQUEST_LINK-origin
+requester (AGENTS.md's "Request Result Link" section), who has no
+Greendeal account to view approved data in-app the way a
+GREENDEAL-origin requester already can (Stage 5b) — this never applies
+to that origin. `generateRequestResult` is invoked automatically right
+after approval, and again via a "View Notification Email" reopen
+button, both through `components/requests/request-result-notification.tsx`
+(same Dialog + Copy Link pattern as `request-information-button.tsx`).
+`getRequestResult` backs the public, unauthenticated
+`/request-result/{token}` page — the security boundary is that it only
+ever reads `DataApproval.approvedAttributes` (never
+`DataRequest.requestedAttributes`, which would leak denied/withheld
+fields) and filters Evidence to documentNames within that same
+approved set; the page groups fields via the existing
+`groupRequestedAttributesBySection` and renders approved evidence with
+a mocked Download action (toast only, no real file storage). It's a
+static snapshot at approval time — re-approving or a later data change
+doesn't retroactively update it.
 
 ---
 
