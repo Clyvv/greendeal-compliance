@@ -5,7 +5,7 @@ import {
   getSupplierPublicProfile,
 } from "@/lib/services/mockPublicRequestService";
 import { SupplierRequestIntro } from "@/components/public-request/supplier-request-intro";
-import { PublicContinuePlaceholder } from "@/components/public-request/public-continue-placeholder";
+import { PublicRequestForm } from "@/components/public-request/public-request-form";
 import { Card, CardContent } from "@/components/ui/card";
 
 export const dynamic = "force-dynamic";
@@ -50,7 +50,15 @@ export default async function ProductPublicRequestPage({
         </CardContent>
       </Card>
 
-      <PublicContinuePlaceholder />
+      {/* Stage 7.5 — the actual requester-details/field-selection/
+          purpose form + submit flow, appended below the Stage 7.4
+          header/product summary above (unmodified). */}
+      <PublicRequestForm
+        supplierSlug={slug}
+        supplierName={profile.supplierName}
+        productId={product.productId}
+        productName={product.name}
+      />
 
       {profile.publishedProducts.length > 1 && (
         <p className="text-xs text-slate-500">

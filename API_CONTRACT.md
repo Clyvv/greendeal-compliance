@@ -155,6 +155,33 @@ spam/bot protection (captcha), and probably email verification of the
 requester before the supplier sees it as legitimate — out of scope for
 the prototype but worth flagging to the backend team now.
 
+Implemented in Stage 7.5 (`components/public-request/public-request-form.tsx`
+→ `lib/public-request/actions.ts` → this function). `submitPublicDataRequest`
+re-validates the slug/product server-side (never trusts what the client
+last rendered), then constructs the `DataRequest` directly — no
+`requestingOrgId` (there's no Greendeal Organization behind an
+unauthenticated submission) and no `packagingItemId` (this request isn't
+"for" any Greendeal packaging item), replaced by a `requester` object
+(DOMAIN.md §8a) and `origin: 'PUBLIC_REQUEST_LINK'`. Its `id` uses a
+separate `REQ-XXXX` sequence (not `mockRequestService`'s `dr-N` one) so
+the confirmation screen has a human-presentable reference number to
+show a requester with no Greendeal dashboard to look anything else up
+in. Returns only `{ requestId, supplierName }` — deliberately nothing
+else (not even the submitted `requestedAttributes`/`purpose` back, let
+alone any compliance data), per this stage's "a public link is a
+request endpoint, never a data page" boundary (AGENTS.md §10a).
+
+Because `DataRequest.requestingOrgId`/`packagingItemId` are now optional
+or the whole codebase, `getOrganization`, `getPackagingItem`, and
+`getPackagingComponentsByProduct` (mockOrganizationService /
+mockPackagingService) were all widened to accept `undefined` and return
+`undefined`/`[]` rather than throwing — same pattern Stage 7.3 already
+established for `PackagingComponent`'s optional foreign keys. See
+`lib/requests/requester.ts`'s `formatRequestingPartyName` for how the
+Supplier/Manufacturer Data Requests pages render a request whose
+`requestingOrgId` is absent (falls back to the `requester` object's
+company name) instead of calling `getOrganization(undefined)` blindly.
+
 ### mockProvenanceService
 
 | Function | Method + Path | Status |

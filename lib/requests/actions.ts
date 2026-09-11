@@ -74,7 +74,7 @@ export async function submitDataRequestAction(
 // supplierProductId) instead — see
 // mockPackagingService.getPackagingComponentsByProduct.
 async function syncComponentAuthorization(
-  packagingItemId: string,
+  packagingItemId: string | undefined,
   supplierProductId: string,
   status: "AUTHORIZED" | "REJECTED"
 ) {

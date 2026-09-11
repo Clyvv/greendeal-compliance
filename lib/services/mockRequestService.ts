@@ -82,8 +82,13 @@ export async function createDataRequest(
     requestDate: today(),
     status: "PENDING",
     // Every request created through this flow is the native
-    // Greendeal-to-Greendeal scenario (AGENTS.md §10a scenario 1) — the
-    // public-request-link/external origins arrive in a later stage.
+    // Greendeal-to-Greendeal scenario (AGENTS.md §10a scenario 1). As
+    // of Stage 7.5 there's a second construction path —
+    // mockPublicRequestService.submitPublicDataRequest, origin
+    // PUBLIC_REQUEST_LINK — which builds its own DataRequest directly
+    // (different required inputs: a `requester` object instead of
+    // requestingOrgId, no packagingItemId) rather than reusing this
+    // function's input shape.
     origin: "GREENDEAL",
   };
   dataRequests.push(request);

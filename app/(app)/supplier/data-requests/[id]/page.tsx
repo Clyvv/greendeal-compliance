@@ -11,6 +11,7 @@ import {
 } from "@/lib/services/mockPackagingService";
 import { CURRENT_SUPPLIER_ORG_ID } from "@/lib/constants";
 import { groupRequestedAttributesBySection } from "@/lib/requests/fields";
+import { formatRequestingPartyName } from "@/lib/requests/requester";
 import { DataRequestApprovalFlow } from "@/components/requests/data-request-approval-flow";
 
 // A request's status can change (PENDING -> APPROVED/REJECTED) without
@@ -62,7 +63,7 @@ export default async function SupplierDataRequestDetailPage({
   return (
     <DataRequestApprovalFlow
       request={request}
-      requestingOrgName={requestingOrg?.name ?? "Unknown organization"}
+      requestingOrgName={formatRequestingPartyName(request, requestingOrg?.name)}
       supplierProductName={supplierProduct?.name ?? "Unknown product"}
       packagingItemName={packagingItem?.name ?? "Unknown packaging item"}
       supplierOrgName={supplierOrg?.name ?? "Unknown supplier"}

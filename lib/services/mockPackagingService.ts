@@ -13,9 +13,16 @@ export async function getPackagingItems(
 }
 
 // Maps to: GET /api/v1/packaging-items/{itemId}
+// Accepts `undefined` (Stage 7.5) so callers resolving a DataRequest's
+// now-optional packagingItemId (unset for PUBLIC_REQUEST_LINK
+// submissions, which aren't "for" any Greendeal packaging item — see
+// lib/types/data-request.ts) don't need a ternary at every call site —
+// same pattern mockProductService's getters use for optional
+// PackagingComponent foreign keys (Stage 7.3).
 export async function getPackagingItem(
-  itemId: string
+  itemId: string | undefined
 ): Promise<PackagingItem | undefined> {
+  if (!itemId) return undefined;
   return packagingItems.find((item) => item.id === itemId);
 }
 
@@ -47,10 +54,16 @@ export async function getPackagingComponent(
 // strictly forbids the same supplier product being used by more than
 // one component on an item, even though today's sample data never
 // does that.
+// Accepts an undefined packagingItemId (Stage 7.5) for the same reason
+// getPackagingItem above does — a PUBLIC_REQUEST_LINK DataRequest has
+// none, and there's never a real component to find for it anyway (no
+// packaging item means nothing to correlate against), so this just
+// returns an empty list rather than requiring every caller to guard it.
 export async function getPackagingComponentsByProduct(
-  packagingItemId: string,
+  packagingItemId: string | undefined,
   supplierProductId: string
 ): Promise<PackagingComponent[]> {
+  if (!packagingItemId) return [];
   return packagingComponents.filter(
     (component) =>
       component.packagingItemId === packagingItemId &&

@@ -4,6 +4,7 @@ import { getOrganization } from "@/lib/services/mockOrganizationService";
 import { getSupplierProduct } from "@/lib/services/mockProductService";
 import { getPackagingItem } from "@/lib/services/mockPackagingService";
 import { CURRENT_SUPPLIER_ORG_ID } from "@/lib/constants";
+import { formatRequestingPartyName } from "@/lib/requests/requester";
 import { formatDate } from "@/lib/utils";
 import {
   DATA_REQUEST_STATUS_LABELS,
@@ -39,7 +40,15 @@ export default async function SupplierDataRequestsPage() {
         getSupplierProduct(request.supplierProductId),
         getPackagingItem(request.packagingItemId),
       ]);
-      return { request, requestingOrg, product, packagingItem };
+      // Stage 7.5 — request.requestingOrgId is absent for a
+      // PUBLIC_REQUEST_LINK request (no Greendeal Organization behind
+      // it); render its self-entered requester info instead of
+      // blindly trusting getOrganization()'s result.
+      const requestingPartyName = formatRequestingPartyName(
+        request,
+        requestingOrg?.name
+      );
+      return { request, requestingPartyName, product, packagingItem };
     })
   );
 
@@ -74,12 +83,12 @@ export default async function SupplierDataRequestsPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {rows.map(({ request, requestingOrg, product, packagingItem }) => {
+            {rows.map(({ request, requestingPartyName, product, packagingItem }) => {
               const fieldCount = request.requestedAttributes.length;
               return (
                 <TableRow key={request.id}>
                   <TableCell className="font-medium text-slate-900">
-                    {requestingOrg?.name ?? "Unknown organization"}
+                    {requestingPartyName}
                   </TableCell>
                   <TableCell>{product?.name ?? "Unknown product"}</TableCell>
                   <TableCell>
