@@ -1,5 +1,18 @@
-import type { DataApproval, DataRequest } from "@/lib/types";
-import { dataApprovals, dataRequests, packagingComponents } from "@/lib/mock-data";
+import type {
+  DataApproval,
+  DataRequest,
+  Evidence,
+  ProductVersion,
+  SupplierProduct,
+} from "@/lib/types";
+import {
+  dataApprovals,
+  dataRequests,
+  evidence,
+  packagingComponents,
+  productVersions,
+  supplierProducts,
+} from "@/lib/mock-data";
 import { MOCK_TODAY } from "@/lib/constants";
 
 function today(): string {
@@ -139,6 +152,24 @@ export async function approveDataRequest(
   return approval;
 }
 
+// Maps to: GET /api/v1/data-requests/{requestId} (a real API would
+// likely fold this into that response as a nested resource, rather
+// than a separate call — added here as its own function since the
+// mock's DataRequest/DataApproval are separate arrays).
+// Stage 7.6 — a direct dataRequestId -> DataApproval lookup,
+// independent of any PackagingComponent. getAuthorizedData's
+// component-based aggregation (above) is the right source of truth
+// for "what can this packaging component's data-consumer see" (Stage
+// 6), but a PUBLIC_REQUEST_LINK request has no packaging component at
+// all to route through (Stage 7.5 — packagingItemId is unset), so
+// redisplaying "what was approved for THIS request" on the Supplier
+// Data Request detail page needs this instead, for both origins.
+export async function getApprovalForRequest(
+  requestId: string
+): Promise<DataApproval | undefined> {
+  return dataApprovals.find((approval) => approval.dataRequestId === requestId);
+}
+
 // Maps to: POST /api/v1/data-requests/{requestId}/reject
 // A full rejection needs no partial-approval state (AGENTS.md §7 —
 // this stage's prompt), so no DataApproval record is created here.
@@ -216,5 +247,128 @@ export async function getAuthorizedData(
     packagingComponentId,
     supplierProductId: component.supplierProductId,
     authorizedAttributes: [...authorizedAttributes],
+  };
+}
+
+export type CoverageStatus = "AVAILABLE" | "MISSING";
+
+export interface RequestCoverageResult {
+  requestId: string;
+  /** One entry per request.requestedAttributes, in that same order —
+   * field label -> whether the supplier already has that data on
+   * file, independent of whether it's been approved for sharing yet
+   * (this is "do I have it", not "have I agreed to share it"). */
+  coverage: Record<string, CoverageStatus>;
+  availableCount: number;
+  totalCount: number;
+}
+
+// Original requirements doc §8 — an illustrative, simplified heuristic
+// for "is this field on file at all", same spirit as
+// lib/assessment-findings.ts's disclaimer: this checks presence of a
+// value, never judges whether that value is good/compliant/complete
+// enough. NOT_APPLICABLE counts as available — the supplier explicitly
+// answered "doesn't apply", which is a real, on-file answer, not a
+// gap (AGENTS.md §8: NOT_APPLICABLE and NOT_PROVIDED are meaningfully
+// different, never collapsed). Only NOT_PROVIDED (or an absent
+// version entirely) counts as missing. Numeric circularity/physical
+// fields (Total Recycled Content, Net Weight, ...) have no FieldStatus
+// of their own in the domain model (DOMAIN.md §3 — always plain
+// numbers) — once a ProductVersion exists at all, they're always
+// "on file" (even a genuine 0% is a real, filled-in answer).
+function isFieldOnFile(
+  field: string,
+  product: SupplierProduct | undefined,
+  version: ProductVersion | undefined,
+  evidenceItems: Evidence[]
+): boolean {
+  switch (field) {
+    case "GTIN":
+      return Boolean(product?.gtin);
+    case "Country of Origin":
+      return Boolean(product?.countryOfOrigin);
+    case "Material Composition":
+      return Boolean(version?.physical.specificMaterial);
+    case "Net Weight":
+    case "Total Recycled Content":
+    case "PCR":
+    case "Pre-Consumer Recycled Content":
+      return Boolean(version);
+    case "Dimensions":
+      return Boolean(version?.physical.dimensions);
+    case "Thickness":
+      return Boolean(version && version.physical.thicknessMm > 0);
+    case "DfR Grade":
+      return Boolean(version?.circularity.dfrGrade);
+    case "Heavy Metals":
+      return typeof version?.chemicalSafety.heavyMetalPpm === "number";
+    case "PFAS":
+      return version ? version.chemicalSafety.pfasStatus !== "NOT_PROVIDED" : false;
+    case "REACH":
+      return version ? version.chemicalSafety.reachSvhcStatus !== "NOT_PROVIDED" : false;
+    case "SCIP":
+      return Boolean(version?.chemicalSafety.scipCode);
+    case "RoHS":
+      return version ? version.chemicalSafety.rohsStatus !== "NOT_PROVIDED" : false;
+    case "FCM":
+      return version ? version.specializedDomain.fcmStatus !== "NOT_PROVIDED" : false;
+    case "OML":
+      return Boolean(version?.specializedDomain.omlTestScore);
+    case "Sterilization":
+      return Boolean(version?.specializedDomain.sterilizationProfile);
+    default:
+      // Not one of the static field labels above — must be an
+      // evidence document name (lib/requests/fields.ts's comment on
+      // why those aren't statically enumerable). Available only if a
+      // real Evidence record with that exact documentName exists for
+      // this version.
+      return evidenceItems.some((item) => item.documentName === field);
+  }
+}
+
+// Maps to: GET /api/v1/data-requests/{requestId}/coverage
+// Original requirements doc §8 — "existing data coverage": before
+// deciding what to approve, a supplier should see which requested
+// fields they already have on file versus which are genuinely
+// missing, so they're not re-entering data Greendeal already has
+// (AGENTS.md §10a's core promise). Works identically regardless of
+// origin (GREENDEAL or PUBLIC_REQUEST_LINK) — it's purely a function
+// of request.supplierProductId, which both origins always set. If
+// supplierProductId doesn't resolve to a real product/version at all
+// (the edge case this stage's prompt calls out — e.g. a stale id),
+// isFieldOnFile's `undefined` branches naturally make every field
+// MISSING rather than throwing.
+export async function getRequestCoverage(
+  requestId: string
+): Promise<RequestCoverageResult | undefined> {
+  const request = dataRequests.find((item) => item.id === requestId);
+  if (!request) return undefined;
+
+  const product = supplierProducts.find(
+    (item) => item.id === request.supplierProductId
+  );
+  const version = product
+    ? productVersions.find((item) => item.id === product.currentVersionId)
+    : undefined;
+  const evidenceItems = version
+    ? evidence.filter((item) => item.productVersionId === version.id)
+    : [];
+
+  const coverage: Record<string, CoverageStatus> = {};
+  for (const field of request.requestedAttributes) {
+    coverage[field] = isFieldOnFile(field, product, version, evidenceItems)
+      ? "AVAILABLE"
+      : "MISSING";
+  }
+
+  const availableCount = Object.values(coverage).filter(
+    (status) => status === "AVAILABLE"
+  ).length;
+
+  return {
+    requestId,
+    coverage,
+    availableCount,
+    totalCount: request.requestedAttributes.length,
   };
 }

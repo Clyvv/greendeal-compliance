@@ -5,6 +5,7 @@ import { getSupplierProduct } from "@/lib/services/mockProductService";
 import { getPackagingItem } from "@/lib/services/mockPackagingService";
 import { CURRENT_SUPPLIER_ORG_ID } from "@/lib/constants";
 import { formatRequestingPartyName } from "@/lib/requests/requester";
+import { RequestOriginBadge } from "@/components/requests/request-origin-badge";
 import { formatDate } from "@/lib/utils";
 import {
   DATA_REQUEST_STATUS_LABELS,
@@ -70,6 +71,7 @@ export default async function SupplierDataRequestsPage() {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead>Origin</TableHead>
               <TableHead>Requesting Organization</TableHead>
               <TableHead>Product</TableHead>
               <TableHead>Packaging Item</TableHead>
@@ -87,6 +89,9 @@ export default async function SupplierDataRequestsPage() {
               const fieldCount = request.requestedAttributes.length;
               return (
                 <TableRow key={request.id}>
+                  <TableCell>
+                    <RequestOriginBadge request={request} />
+                  </TableCell>
                   <TableCell className="font-medium text-slate-900">
                     {requestingPartyName}
                   </TableCell>

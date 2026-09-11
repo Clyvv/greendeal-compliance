@@ -1,17 +1,16 @@
 import { notFound } from "next/navigation";
 import {
-  getAuthorizedData,
+  getApprovalForRequest,
   getDataRequest,
+  getRequestCoverage,
 } from "@/lib/services/mockRequestService";
 import { getOrganization } from "@/lib/services/mockOrganizationService";
 import { getSupplierProduct } from "@/lib/services/mockProductService";
-import {
-  getPackagingComponentsByProduct,
-  getPackagingItem,
-} from "@/lib/services/mockPackagingService";
+import { getPackagingItem } from "@/lib/services/mockPackagingService";
 import { CURRENT_SUPPLIER_ORG_ID } from "@/lib/constants";
 import { groupRequestedAttributesBySection } from "@/lib/requests/fields";
 import { formatRequestingPartyName } from "@/lib/requests/requester";
+import { getEffectiveOrigin } from "@/lib/requests/origin";
 import { DataRequestApprovalFlow } from "@/components/requests/data-request-approval-flow";
 
 // A request's status can change (PENDING -> APPROVED/REJECTED) without
@@ -34,27 +33,30 @@ export default async function SupplierDataRequestDetailPage({
   // to another supplier, even via a guessed URL.
   if (request.supplierOrgId !== CURRENT_SUPPLIER_ORG_ID) notFound();
 
-  const [requestingOrg, supplierOrg, supplierProduct, packagingItem, components] =
+  const [requestingOrg, supplierOrg, supplierProduct, packagingItem, approval, coverage] =
     await Promise.all([
       getOrganization(request.requestingOrgId),
       getOrganization(request.supplierOrgId),
       getSupplierProduct(request.supplierProductId),
       getPackagingItem(request.packagingItemId),
-      getPackagingComponentsByProduct(
-        request.packagingItemId,
-        request.supplierProductId
-      ),
+      // Stage 7.6 — a direct dataRequestId -> DataApproval lookup
+      // (getApprovalForRequest), not the component-based
+      // getAuthorizedData this page used through Stage 7.5. A
+      // PUBLIC_REQUEST_LINK request has no packaging component to
+      // route through at all (no packagingItemId — Stage 7.5), so
+      // that approach silently produced `undefined` for exactly the
+      // requests this stage adds visibility for; this lookup is
+      // correct for both origins.
+      getApprovalForRequest(request.id),
+      // Original requirements doc §8: what the supplier already has
+      // on file for this product, regardless of origin (see
+      // getRequestCoverage's own comment for why it doesn't need to
+      // branch on GREENDEAL vs PUBLIC_REQUEST_LINK itself).
+      getRequestCoverage(request.id),
     ]);
 
-  // For an already-approved request, redisplay exactly what was
-  // authorized by asking the same getAuthorizedData function the
-  // manufacturer side depends on (rather than re-deriving it some
-  // other way) — one source of truth for "what's actually approved".
-  let approvedAttributes: string[] | undefined;
-  if (request.status === "APPROVED" && components[0]) {
-    const authorizedData = await getAuthorizedData(components[0].id);
-    approvedAttributes = authorizedData?.authorizedAttributes;
-  }
+  const approvedAttributes: string[] | undefined =
+    request.status === "APPROVED" ? approval?.approvedAttributes : undefined;
 
   const groupedRequested = groupRequestedAttributesBySection(
     request.requestedAttributes
@@ -63,12 +65,18 @@ export default async function SupplierDataRequestDetailPage({
   return (
     <DataRequestApprovalFlow
       request={request}
+      origin={getEffectiveOrigin(request)}
       requestingOrgName={formatRequestingPartyName(request, requestingOrg?.name)}
       supplierProductName={supplierProduct?.name ?? "Unknown product"}
-      packagingItemName={packagingItem?.name ?? "Unknown packaging item"}
+      // Undefined (not a fallback string) when request.packagingItemId
+      // itself is unset — a PUBLIC_REQUEST_LINK request genuinely has
+      // none (Stage 7.5), so the component omits that field entirely
+      // rather than showing a misleading "Unknown packaging item".
+      packagingItemName={packagingItem?.name}
       supplierOrgName={supplierOrg?.name ?? "Unknown supplier"}
       groupedRequested={groupedRequested}
       approvedAttributes={approvedAttributes}
+      coverage={coverage?.coverage}
     />
   );
 }

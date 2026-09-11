@@ -12,7 +12,9 @@ import {
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
+import { StatusPill } from "@/components/ui/status-pill";
 import { ProvenanceBadge } from "@/components/provenance/provenance-badge";
+import { RequestOriginBadge } from "@/components/requests/request-origin-badge";
 import { useToast } from "@/components/providers/toast-provider";
 import {
   approveDataRequestAction,
@@ -20,7 +22,8 @@ import {
 } from "@/lib/requests/actions";
 import { formatDate } from "@/lib/utils";
 import { buildSupplierApprovedProvenance } from "@/lib/provenance";
-import type { DataRequest, DataRequestStatus } from "@/lib/types";
+import type { CoverageStatus } from "@/lib/services/mockRequestService";
+import type { DataRequest, DataRequestStatus, RequestOrigin } from "@/lib/types";
 import type { GroupedRequestedAttributes } from "@/lib/requests/fields";
 
 function getErrorMessage(error: unknown): string {
@@ -31,9 +34,17 @@ function getErrorMessage(error: unknown): string {
 
 export interface DataRequestApprovalFlowProps {
   request: DataRequest;
+  /** Stage 7.6 — GREENDEAL vs PUBLIC_REQUEST_LINK (already resolved by
+   * the page via lib/requests/origin.ts's getEffectiveOrigin, so this
+   * component never has to guess a default for legacy seed data). */
+  origin: RequestOrigin;
   requestingOrgName: string;
   supplierProductName: string;
-  packagingItemName: string;
+  /** Undefined when request.packagingItemId itself is unset — a
+   * PUBLIC_REQUEST_LINK request genuinely has no Greendeal packaging
+   * item (Stage 7.5). Rendered conditionally, never defaulted to a
+   * placeholder string, so it's not confused with a lookup failure. */
+  packagingItemName?: string;
   /** The current org's own name — used only for the post-approval
    * provenance badge (DOMAIN.md §8a): this supplier is the source of
    * the data it just approved sharing. */
@@ -41,16 +52,22 @@ export interface DataRequestApprovalFlowProps {
   groupedRequested: GroupedRequestedAttributes[];
   /** Only set when request.status === "APPROVED" (see the page loader). */
   approvedAttributes?: string[];
+  /** Stage 7.6 — original requirements doc §8: per-field "already on
+   * file" comparison from mockRequestService.getRequestCoverage,
+   * keyed by the same attribute strings as requestedAttributes. */
+  coverage?: Record<string, CoverageStatus>;
 }
 
 export function DataRequestApprovalFlow({
   request,
+  origin,
   requestingOrgName,
   supplierProductName,
   packagingItemName,
   supplierOrgName,
   groupedRequested,
   approvedAttributes,
+  coverage,
 }: DataRequestApprovalFlowProps) {
   const [status, setStatus] = useState<DataRequestStatus>(request.status);
   const [resolvedApprovedAttributes, setResolvedApprovedAttributes] =
@@ -130,9 +147,12 @@ export function DataRequestApprovalFlow({
         >
           ← Back to Data Requests
         </Link>
-        <h1 className="mt-2 text-xl font-semibold text-slate-900">
-          Data Request
-        </h1>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <h1 className="text-xl font-semibold text-slate-900">
+            Data Request
+          </h1>
+          <RequestOriginBadge request={{ origin }} />
+        </div>
         <p className="mt-1 text-sm text-slate-500">
           Requested {formatDate(request.requestDate)}
         </p>
@@ -140,7 +160,11 @@ export function DataRequestApprovalFlow({
 
       <Card>
         <CardContent className="space-y-4 py-4">
-          <dl className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <dl
+            className={`grid grid-cols-1 gap-4 ${
+              packagingItemName ? "sm:grid-cols-3" : "sm:grid-cols-2"
+            }`}
+          >
             <div>
               <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
                 Requested by
@@ -149,14 +173,20 @@ export function DataRequestApprovalFlow({
                 {requestingOrgName}
               </dd>
             </div>
-            <div>
-              <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                Packaging item
-              </dt>
-              <dd className="mt-0.5 text-sm text-slate-900">
-                {packagingItemName}
-              </dd>
-            </div>
+            {/* Only rendered when request.packagingItemId is actually
+                set — a PUBLIC_REQUEST_LINK request has none (Stage
+                7.5), so this is omitted entirely rather than showing a
+                misleading "Unknown packaging item" placeholder. */}
+            {packagingItemName && (
+              <div>
+                <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Packaging item
+                </dt>
+                <dd className="mt-0.5 text-sm text-slate-900">
+                  {packagingItemName}
+                </dd>
+              </div>
+            )}
             <div>
               <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
                 Product
@@ -176,6 +206,58 @@ export function DataRequestApprovalFlow({
           </div>
         </CardContent>
       </Card>
+
+      {/* Stage 7.6 — requester contact details, only present for a
+          PUBLIC_REQUEST_LINK request (DOMAIN.md §8a). GREENDEAL
+          requests keep showing just the resolved Organization name
+          above, unchanged from Stage 5. */}
+      {request.requester && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Requester Details</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Contact Name
+                </dt>
+                <dd className="mt-0.5 text-sm text-slate-900">
+                  {request.requester.contactName}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                  Email
+                </dt>
+                <dd className="mt-0.5 text-sm text-slate-900">
+                  {request.requester.email}
+                </dd>
+              </div>
+              {request.requester.country && (
+                <div>
+                  <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Country
+                  </dt>
+                  <dd className="mt-0.5 text-sm text-slate-900">
+                    {request.requester.country}
+                  </dd>
+                </div>
+              )}
+              {request.requester.referenceNumber && (
+                <div>
+                  <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Their Reference
+                  </dt>
+                  <dd className="mt-0.5 text-sm text-slate-900">
+                    {request.requester.referenceNumber}
+                  </dd>
+                </div>
+              )}
+            </dl>
+          </CardContent>
+        </Card>
+      )}
 
       {status === "PENDING" && (
         <div className="rounded-lg border border-sky-200 bg-sky-50 p-4">
@@ -214,13 +296,25 @@ export function DataRequestApprovalFlow({
       )}
 
       <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
           <CardTitle>Requested Data</CardTitle>
-          {status === "PENDING" && (
-            <Badge tone="neutral">
-              {totalCheckedCount} of {totalRequestedCount} approved
-            </Badge>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Stage 7.6 — original requirements doc §8: a quick
+                "how much of this do I already have" summary, same
+                Badge pattern as the existing approved-count badge
+                below (not a new visual style). */}
+            {status === "PENDING" && coverage && (
+              <Badge tone="neutral">
+                {Object.values(coverage).filter((value) => value === "AVAILABLE").length}{" "}
+                of {totalRequestedCount} on file
+              </Badge>
+            )}
+            {status === "PENDING" && (
+              <Badge tone="neutral">
+                {totalCheckedCount} of {totalRequestedCount} approved
+              </Badge>
+            )}
+          </div>
         </CardHeader>
         <CardContent className="space-y-5">
           {groupedRequested.map((group) => (
@@ -240,7 +334,27 @@ export function DataRequestApprovalFlow({
                         onChange={() => toggleAttribute(attribute)}
                         disabled={isPending}
                       />
-                      {attribute}
+                      <span className="flex-1">{attribute}</span>
+                      {/* Stage 7.6 — visible alongside the approve
+                          checkbox, not blocking it: a MISSING field
+                          can still be checked/approved for sharing
+                          (this only surfaces that the supplier
+                          doesn't currently have it on file — see
+                          mockRequestService.getRequestCoverage). */}
+                      {coverage?.[attribute] && (
+                        <StatusPill
+                          status={
+                            coverage[attribute] === "AVAILABLE"
+                              ? "complete"
+                              : "missing"
+                          }
+                          label={
+                            coverage[attribute] === "AVAILABLE"
+                              ? "Available"
+                              : "Missing"
+                          }
+                        />
+                      )}
                     </label>
                   ))}
                 </div>

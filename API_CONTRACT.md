@@ -196,6 +196,24 @@ company name) instead of calling `getOrganization(undefined)` blindly.
 | `submitRequestResponse(requestId, response)` | `POST /api/v1/data-requests/{id}/response` | 🟡 |
 | `claimExternalSupplierProduct(externalProductId, realSupplierId)` | `POST /api/v1/external-supplier-products/{id}/claim` | 🟡 |
 
+Implemented in Stage 7.6 (`components/requests/data-request-approval-flow.tsx`
+renders it inline next to each field's approve checkbox — original
+requirements doc §8's "existing data coverage" comparison, not a
+separate summary page). Works identically for both origins —
+`request.supplierProductId` is always set regardless of GREENDEAL vs
+PUBLIC_REQUEST_LINK, so this never branches on `origin` itself; it just
+resolves that product's current `ProductVersion` + `Evidence` and
+checks, per requested field, whether a real value already exists
+(`AVAILABLE`) or not (`MISSING`) — an illustrative, simplified
+per-field heuristic (same spirit as `lib/assessment-findings.ts`'s
+disclaimer), never a judgment on whether the value is *good enough*.
+`NOT_APPLICABLE` counts as `AVAILABLE` (a real, on-file answer);
+only `NOT_PROVIDED` (or no resolvable product/version at all — the
+prompt's called-out edge case) counts as `MISSING`, handled by
+returning `undefined`/falling through rather than throwing.
+`submitRequestResponse`/`claimExternalSupplierProduct` remain
+unimplemented.
+
 ---
 
 ## Open questions to resolve with backend team before real integration
